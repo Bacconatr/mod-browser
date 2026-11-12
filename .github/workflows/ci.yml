@@ -10,37 +10,39 @@ permissions:
 
 jobs:
   test:
-    # Where this runs is a repository variable, so moving it to the homelab's
-    # VM118 runner (as every other private repo's CI is, Homelab
-    # docs/self-hosted-ci.md) needs no workflow change: set CI_RUNS_ON to
-    # ["self-hosted","linux","x64","homelab-ci"] once that runner is
-    # registered for this repo. Until then it is GitHub-hosted; the job is
-    # about a minute.
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    # The homelab's VM118 runner is the target, like every private repo here:
+    # GitHub bills hosted minutes on a private repo, and a failed charge for
+    # them (2026-11-06) locked every run on the account. No runner is
+    # registered for this repo yet, and a job waiting on a label nobody serves
+    # queues forever, so until one is, the job runs GitHub-hosted (about a
+    # minute). Registering the runner is a Homelab change; then set repository
+    # variable CI_RUNS_ON to ["self-hosted","linux","x64","homelab-ci"].
+    # Same-repository PRs only.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm audit --omit=dev --audit-level=high
+      - name: Python and git on the runner
+        run: python3 --version && git --version
+      - name: Byte-compile
+        run: python3 -m compileall -q mod_browser tests
+      - name: Tests (HTTP API with a fake Server port, and the RCON adapter)
+        run: python3 -m unittest discover -s tests -t . -v
 
-  # No credential belongs in this repo, and history is scanned in full because
-  # a leak in any commit is permanent.
+  # Guest 120 is Internet-facing: nothing in this repo may hold a credential.
+  # History is scanned in full on every run because a leak in any commit is permanent.
   secrets:
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # The tarball is checked against its published sha256 (read 2026-11-12)
+      # before anything from it runs on the shared runner.
       - name: gitleaks
         run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz | tar -xz gitleaks
+          curl -sSfL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
+          echo "a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
           ./gitleaks detect --source . --redact --verbose

@@ -1,6 +1,6 @@
 .git
 .github
-node_modules
-test
-data
+tests
+docs
+**/__pycache__
 .env*

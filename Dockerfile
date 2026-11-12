@@ -1,14 +1,24 @@
-# One image, no build step and no runtime dependencies: Node 24 runs the
-# TypeScript sources directly (type stripping). git is here because the mod
-# list's "added by / added on" is read from the pack repository's history.
-FROM node:24-alpine
-RUN apk add --no-cache git
+# The mod site for the Aeronautics server (guest 120). Standard library only:
+# this runs on the one Internet-facing guest, so it carries no third-party
+# Python packages. git reads the pack's history; tzdata reads the log's times.
+FROM python:3.13.17-alpine3.24
+
+RUN apk add --no-cache git tzdata
+
 WORKDIR /app
-COPY package.json ./
-COPY src src
-ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0
-USER node
-EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1
-CMD ["node", "src/server.ts"]
+COPY mod_browser /app/mod_browser
+
+# The rootfs is read-only at runtime (compose), so no .pyc writes and a HOME
+# git can read without complaint.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOME=/tmp
+
+# uid 1000 owns the RCON password file on the guest (0400); nothing else here
+# needs a name.
+USER 1000:1000
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["python", "-m", "mod_browser.healthcheck"]
+CMD ["python", "-m", "mod_browser"]
