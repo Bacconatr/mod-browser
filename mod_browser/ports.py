@@ -1,8 +1,8 @@
 """The two ports the app talks to the world through.
 
-Only `ServerPort` exists so far. The spec's `CatalogPort` (Modrinth and
-CurseForge search) arrives with the request queue; it gets its own Protocol
-here, a real adapter beside `rcon.py`, and a fake in `tests/fakes.py`.
+`ServerPort` is the game; `CatalogPort`, `JarPort` and `InstalledPort` are
+Modrinth and CurseForge, a candidate's jar, and the server's mods directory.
+Each has a real adapter beside it and a fake in `tests/fakes.py`.
 
 Tests drive the HTTP API with a fake behind each port, so a new feature is
 tested by telling the fake what the world looks like and asserting on what a
@@ -13,6 +13,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Protocol
+
+from .catalog import InstalledMod, Project, Version
+from .jar import JarInfo
 
 
 class ServerUnavailable(Exception):
@@ -34,3 +37,28 @@ class ServerPort(Protocol):
 
     def last_start(self) -> datetime | None:
         """When the server process last started (timezone-aware), if known."""
+
+
+class CatalogPort(Protocol):
+    """Modrinth and CurseForge, narrowed to NeoForge 1.21.1."""
+
+    def search(self, query: str) -> tuple[list[Project], list[str]]:
+        """Projects matching a query (or a pasted CurseForge id or link), and warnings."""
+
+    def project(self, source: str, project_id: str) -> Project: ...
+
+    def versions(self, source: str, project_id: str) -> list[Version]:
+        """Newest first."""
+
+    def find_by_mod_id(self, mod_id: str, hints: list[str]) -> list[Project]:
+        """Projects on either platform that could be the mod with this id."""
+
+
+class JarPort(Protocol):
+    def info(self, version: Version) -> JarInfo | None:
+        """The candidate's jar read for its mods.toml; None when it cannot be."""
+
+
+class InstalledPort(Protocol):
+    def mods(self) -> list[InstalledMod]:
+        """Every mod the server has installed, read from its mods directory."""

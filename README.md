@@ -3,8 +3,8 @@
 The status page and mod list for the Aeronautics server ("Tel Aviv", guest
 120 in [Homelab](https://github.com/Bacconatr/Homelab)), served at
 `https://mods.example.com`. Spec: Homelab #1675. This repo: #1679
-(status page and mod list). The request queue, `/admin` and Discord control
-come in later tickets.
+(status page and mod list) and #1680 (read-only mod search and compatibility
+verdicts). The request queue, `/admin` and Discord control come in later tickets.
 
 Deployed by Homelab's `aeronautics` role (`tasks/mod-browser.yml`), pinned to
 a commit of this repo. Bump the pin in a Homelab PR, like an image tag.
@@ -106,3 +106,26 @@ python3 -m unittest discover -s tests -t . -v   # needs git; Python 3.11+
 
 CI (`.github/workflows/ci.yml`) runs the same on the homelab's self-hosted
 runner, plus gitleaks over the full history.
+
+## Find a mod (#1680)
+
+`/add` searches Modrinth for NeoForge 1.21.1, shows its versions, and explains
+what the requested jar and its required dependencies would add to the pack.
+The verdict reads each jar's `neoforge.mods.toml` and the server's installed
+mods; it does not change the pack or the game. It flags installed mods,
+incompatibilities, unsatisfied ranges, client-only mods, and blocked downloads.
+
+CurseForge text search currently returns 403 for this key (Homelab #1680).
+The page accepts a CurseForge project ID pasted from the project's About panel;
+project and file lookup work. A pasted slug link asks for that ID. Dependency
+search may therefore miss a CurseForge-only version while text search is off;
+the verdict refuses rather than claiming that an incompatible version works.
+`MOD_BROWSER_CURSEFORGE_SEARCH` can be enabled when the API starts
+returning 200. `MOD_BROWSER_CURSEFORGE_API_KEY_FILE` points at a guest-local key
+file, and `MOD_BROWSER_MODS_DIR` points at the server's read-only mods folder.
+The deploy role must explicitly supply those mounts before the live page can
+search CurseForge or compare installed jars.
+
+Catalog and jar fetches only use HTTPS hosts in `mod_browser/net.py`; redirects
+are checked again, bodies are capped, and one resolve makes at most ten
+dependency lookups. The browser writes upstream text with `textContent`.

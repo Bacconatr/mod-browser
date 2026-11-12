@@ -1,0 +1,31 @@
+modLoader="javafml"
+loaderVersion="${loader_version_range}"
+license="${mod_license}"
+
+[[mods]]
+modId="ponderforkc"
+version="1.0.0"
+displayName="Ponder for KaleidoscopeCookery"
+logoFile="icon.png"
+authors="摸里傻"
+
+description='''
+按住w开始做菜.jpg
+'''
+
+[[mixins]]
+config="ponderforkc.mixins.json"
+
+[[dependencies."ponderforkc"]]
+    modId="neoforge"
+    type="required"
+    versionRange="[${neo_version},)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies."ponderforkc"]]
+    modId="minecraft"
+    type="required"
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"

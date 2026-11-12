@@ -1,0 +1,22 @@
+{
+ "total_hits": 1,
+ "hits": [
+  {
+   "project_id": "QAGBst4M",
+   "slug": "puzzles-lib",
+   "title": "Puzzles Lib",
+   "description": "Why is it called Puzzles? That's the puzzle.",
+   "downloads": 66649381,
+   "icon_url": "https://cdn.modrinth.com/data/QAGBst4M/c78216c61f65b6ce82593e4e92e9c358402bb524_96.webp",
+   "date_modified": "2026-11-12T15:39:54.996203+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "fabric",
+    "forge",
+    "library",
+    "neoforge"
+   ]
+  }
+ ]
+}

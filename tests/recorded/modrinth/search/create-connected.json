@@ -1,0 +1,175 @@
+{
+ "total_hits": 10,
+ "hits": [
+  {
+   "project_id": "Vg5TIO6d",
+   "slug": "create-connected",
+   "title": "Create: Connected",
+   "description": "QoL blocks that you wish existed in Create - Highly configurable, disable what you don't need",
+   "downloads": 7438003,
+   "icon_url": "https://cdn.modrinth.com/data/Vg5TIO6d/2e69151b9664c7f03f0568c5fdf1d44aa98db452_96.webp",
+   "date_modified": "2026-08-31T12:36:37.840468+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "decoration",
+    "forge",
+    "neoforge",
+    "technology",
+    "utility"
+   ]
+  },
+  {
+   "project_id": "59EBKVqI",
+   "slug": "create-aeronautics-and-connected-fluid-vessel-compatability",
+   "title": "Create Aeronautics and Connected Fluid Vessel Compatability",
+   "description": "Add compatibility between create aeronautics and create connected for all things fluid vessel related",
+   "downloads": 23849,
+   "icon_url": "https://cdn.modrinth.com/data/59EBKVqI/d23096bac2c1be52f7f69fdeac2f9593c91446ff_96.webp",
+   "date_modified": "2026-06-14T20:24:23.573632+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "management",
+    "neoforge",
+    "utility"
+   ]
+  },
+  {
+   "project_id": "z75uv1Pl",
+   "slug": "create-connected-encased",
+   "title": "Create Connected: Encased",
+   "description": "Adds the use of casing on Create: Connected blocks",
+   "downloads": 2275,
+   "icon_url": "https://cdn.modrinth.com/data/z75uv1Pl/d4bacbdfa4c35b5ea6e6ae5411a5a5cbf23c7525_96.webp",
+   "date_modified": "2026-10-28T04:29:36.529850+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "decoration",
+    "neoforge",
+    "technology",
+    "utility"
+   ]
+  },
+  {
+   "project_id": "3ADr1McV",
+   "slug": "colorful-catalysts",
+   "title": "Create: Colorful Catalysts",
+   "description": "Bringing Bulk Coloring Catalysts to Create:Garnished/Dragon's Plus without the need for Create: Connected",
+   "downloads": 15989,
+   "icon_url": "https://cdn.modrinth.com/data/3ADr1McV/594298daa853a42d62ca4773e76c98c3a0010fde_96.webp",
+   "date_modified": "2026-09-18T18:02:12.654545+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "neoforge",
+    "technology",
+    "utility"
+   ]
+  },
+  {
+   "project_id": "pvYjawq0",
+   "slug": "convenient_augershafts",
+   "title": "Convenient Auger Shafts",
+   "description": "An addon for Create Aeronautics that grants Auger Shaft the ability to deposit items into inventories at its end following their flow of direction & extract items from Swivel Bearings with connected Borehead Bearings!",
+   "downloads": 2251,
+   "icon_url": "https://cdn.modrinth.com/data/pvYjawq0/f5d10c6a12b857649612a5f1b700f205c98e2e6a_96.webp",
+   "date_modified": "2026-06-11T06:04:43.735366+00:00",
+   "client_side": "optional",
+   "server_side": "required",
+   "categories": [
+    "game-mechanics",
+    "neoforge",
+    "storage",
+    "utility"
+   ]
+  },
+  {
+   "project_id": "hgPqopXJ",
+   "slug": "create-solar-grid-link",
+   "title": "Create: Solar Grid Link",
+   "description": "The compatibility interface that enables Create Solar Powered panels to be connected to Create Power Grid electrical grid. Place Device Connector below Create Solar Powered panels and convert them into polarized electrical power source.",
+   "downloads": 1642,
+   "icon_url": "https://cdn.modrinth.com/data/hgPqopXJ/c21f531b8c73fb5b2e801283f4f472d424b924da_96.webp",
+   "date_modified": "2026-08-09T20:46:44.571124+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "neoforge",
+    "technology"
+   ]
+  },
+  {
+   "project_id": "BdAgIYXr",
+   "slug": "create-radars-mp-compatibility-patch",
+   "title": "Create Radars Multiplayer Compatibility Patch",
+   "description": "Fixes a client-side crash when Create Radars is installed and the client is connected to a multiplayer server.",
+   "downloads": 989,
+   "icon_url": "https://cdn.modrinth.com/data/BdAgIYXr/b27c83c79f4d67f8ee5f0deccf10117c14a7ea1c_96.webp",
+   "date_modified": "2026-07-13T04:08:30.832482+00:00",
+   "client_side": "required",
+   "server_side": "unsupported",
+   "categories": [
+    "game-mechanics",
+    "neoforge",
+    "optimization",
+    "technology"
+   ]
+  },
+  {
+   "project_id": "1Q74Gtvt",
+   "slug": "create-jetpack-vessel-recipefix",
+   "title": "Create: Jetpack-Vessel-Recipefix",
+   "description": "Fixes the duplicate recipe conflict between the Small Filling Tank (Create Stuff 'N Additions) and the Fluid Vessel (Create: Connected).",
+   "downloads": 739,
+   "icon_url": "https://cdn.modrinth.com/data/1Q74Gtvt/8f31986a1fcff9ecc16447f24588769ba4f4e7a9_96.webp",
+   "date_modified": "2026-06-30T00:00:04.349694+00:00",
+   "client_side": "optional",
+   "server_side": "required",
+   "categories": [
+    "datapack",
+    "fabric",
+    "forge",
+    "game-mechanics",
+    "management",
+    "neoforge",
+    "quilt"
+   ]
+  },
+  {
+   "project_id": "aMDomE4d",
+   "slug": "createconnected-and-destroy-compat-fix",
+   "title": "\u0421reate:Connected Vessel compat fix",
+   "description": "Compatibility hotfix for a server crash caused by Create: Connected Fluid Vessels on Create contraptions hen Destroy included into modpack.",
+   "downloads": 563,
+   "icon_url": "https://cdn.modrinth.com/data/aMDomE4d/5407338bf86333b03e25114de4118b7d3ae10c9b_96.webp",
+   "date_modified": "2026-06-25T19:56:33.443876+00:00",
+   "client_side": "unsupported",
+   "server_side": "required",
+   "categories": [
+    "game-mechanics",
+    "neoforge",
+    "technology",
+    "utility"
+   ]
+  },
+  {
+   "project_id": "ouOYlNGh",
+   "slug": "create-immediate-departure",
+   "title": "Create: Immediate Departure",
+   "description": "Fast-travel between Create train stations, once you've discovered them and connected your rail network.",
+   "downloads": 132,
+   "icon_url": "https://cdn.modrinth.com/data/ouOYlNGh/2a964e0926a05c88924245fbe595032c37faba61_96.webp",
+   "date_modified": "2026-08-24T23:07:42.188558+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "fabric",
+    "game-mechanics",
+    "neoforge",
+    "transportation"
+   ]
+  }
+ ]
+}

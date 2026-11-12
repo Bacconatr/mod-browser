@@ -1,0 +1,11 @@
+{
+ "id": "T9PomCSv",
+ "slug": "sable",
+ "title": "Sable",
+ "description": "A library mod for interactive moving block structures, or \"sub-levels\"",
+ "downloads": 6569142,
+ "icon_url": "https://cdn.modrinth.com/data/T9PomCSv/8c0a8c64c9a5a8d446d0aa23d244cb9b52314a1d.png",
+ "updated": "2026-10-03T04:18:01.140110Z",
+ "client_side": "required",
+ "server_side": "required"
+}

@@ -1,0 +1,23 @@
+{
+ "data": [
+  {
+   "id": 947914,
+   "gameId": 432,
+   "name": "Create: Connected",
+   "slug": "create-connected",
+   "summary": "QoL blocks for Create.",
+   "downloadCount": 30000000,
+   "dateModified": "2026-07-18T16:40:00.00Z",
+   "allowModDistribution": true,
+   "logo": {
+    "thumbnailUrl": "https://media.forgecdn.net/avatars/thumbnails/947914/64x64.png"
+   }
+  }
+ ],
+ "pagination": {
+  "index": 0,
+  "pageSize": 20,
+  "resultCount": 1,
+  "totalCount": 1
+ }
+}

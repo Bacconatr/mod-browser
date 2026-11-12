@@ -1,0 +1,36 @@
+[
+ {
+  "id": "C7j9WWVp",
+  "project_id": "2fltysAl",
+  "name": "[NEOFORGE] [1.21.1] StrawStatues-v21.1.0",
+  "version_number": "v21.1.0-1.21.1-NeoForge",
+  "version_type": "release",
+  "date_published": "2024-09-17T22:38:20.654588Z",
+  "dependencies": [
+   {
+    "version_id": null,
+    "project_id": "5WeWGLoJ",
+    "file_name": null,
+    "dependency_type": "optional"
+   },
+   {
+    "version_id": null,
+    "project_id": "QAGBst4M",
+    "file_name": null,
+    "dependency_type": "required"
+   }
+  ],
+  "files": [
+   {
+    "filename": "StrawStatues-v21.1.0-1.21.1-NeoForge.jar",
+    "url": "https://cdn.modrinth.com/data/2fltysAl/versions/C7j9WWVp/StrawStatues-v21.1.0-1.21.1-NeoForge.jar",
+    "primary": true,
+    "hashes": {
+     "sha512": "ee213d7f9a6bc795b293927493e22f07f4bac06ab4cb412815c127cc895a02d286eea4f18973a3e153a27312ea4ebd0bedf5ac5f9247e12756811cdf3085eb85",
+     "sha1": "133f187ee682ee71c3db7307b93c572b7951af4b"
+    },
+    "size": 313043
+   }
+  ]
+ }
+]

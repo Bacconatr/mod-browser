@@ -1,0 +1,31 @@
+{
+ "data": [
+  {
+   "id": 8459097,
+   "modId": 0,
+   "displayName": "functionalstorage-1.21.1-1.5.8.jar",
+   "fileName": "functionalstorage-1.21.1-1.5.8.jar",
+   "releaseType": 1,
+   "fileDate": "2026-07-18T16:40:00.00Z",
+   "downloadUrl": "https://mediafilez.forgecdn.net/files/8459/97/functionalstorage-1.21.1-1.5.8.jar",
+   "isAvailable": true,
+   "dependencies": [
+    {
+     "modId": 1,
+     "relationType": 3
+    }
+   ]
+  },
+  {
+   "id": 8300001,
+   "modId": 0,
+   "displayName": "functionalstorage-1.21.1-1.5.7.jar",
+   "fileName": "functionalstorage-1.21.1-1.5.7.jar",
+   "releaseType": 2,
+   "fileDate": "2026-06-01T10:00:00.00Z",
+   "downloadUrl": "https://mediafilez.forgecdn.net/files/8300/1/functionalstorage-1.21.1-1.5.7.jar",
+   "isAvailable": true,
+   "dependencies": []
+  }
+ ]
+}

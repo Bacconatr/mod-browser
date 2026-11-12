@@ -1,0 +1,48 @@
+[
+ {
+  "id": "3x3kSOMY",
+  "project_id": "DvdmuWPu",
+  "name": "1.21-1.0.0",
+  "version_number": "1.21-1.0.0",
+  "version_type": "beta",
+  "date_published": "2026-08-21T14:24:48.511935Z",
+  "dependencies": [
+   {
+    "version_id": null,
+    "project_id": "LNytGWDc",
+    "file_name": null,
+    "dependency_type": "required"
+   },
+   {
+    "version_id": null,
+    "project_id": "oWaK0Q19",
+    "file_name": null,
+    "dependency_type": "optional"
+   },
+   {
+    "version_id": null,
+    "project_id": "T9PomCSv",
+    "file_name": null,
+    "dependency_type": "optional"
+   },
+   {
+    "version_id": null,
+    "project_id": "cO40ZIg3",
+    "file_name": null,
+    "dependency_type": "required"
+   }
+  ],
+  "files": [
+   {
+    "filename": "functionalstoragecreateaero-1.0.0.jar",
+    "url": "https://cdn.modrinth.com/data/DvdmuWPu/versions/3x3kSOMY/functionalstoragecreateaero-1.0.0.jar",
+    "primary": true,
+    "hashes": {
+     "sha512": "22bebc848b4ab01e8c2fb3e5287cfac950162ee01397aae5a5819d210741b580023e78820f94997dc466b2c68dea5e27d395fae351dc4b9d4d74bd275f20783f",
+     "sha1": "0a87d396e1001e7e6eb50f7cab5b257df8b46079"
+    },
+    "size": 39630
+   }
+  ]
+ }
+]

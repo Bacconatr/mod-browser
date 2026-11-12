@@ -1,0 +1,11 @@
+{
+ "id": "5WeWGLoJ",
+ "slug": "forge-config-screens",
+ "title": "Forge Config Screens",
+ "description": "Allows Forge's configs to be configured directly in-game. Quick and easy with a beautiful design!",
+ "downloads": 13348791,
+ "icon_url": "https://cdn.modrinth.com/data/5WeWGLoJ/218f26d9a3c3fd683c2cc6aaa4a5c04f597cb434_96.webp",
+ "updated": "2023-07-30T10:26:48.436774Z",
+ "client_side": "optional",
+ "server_side": "optional"
+}

@@ -1,0 +1,175 @@
+{
+ "total_hits": 10,
+ "hits": [
+  {
+   "project_id": "cO40ZIg3",
+   "slug": "functional-storage",
+   "title": "Functional Storage",
+   "description": "Functional Storage is an alternative take on the drawer storage solution, with an updated look and additional functionalities!",
+   "downloads": 1166037,
+   "icon_url": "https://cdn.modrinth.com/data/cO40ZIg3/bc3267a800469a0b867a0100706543bbd02f303a_96.webp",
+   "date_modified": "2026-10-14T18:42:56.812758+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "forge",
+    "neoforge",
+    "storage",
+    "utility"
+   ]
+  },
+  {
+   "project_id": "TQJ3P8Ie",
+   "slug": "more-functional-storage",
+   "title": "More Functional Storage",
+   "description": "Functional Storage addon that adds drawer upgrades with more advanced functionality.",
+   "downloads": 9742,
+   "icon_url": "https://cdn.modrinth.com/data/TQJ3P8Ie/2665960ab010a78a351c70d1668ae8ae9d6d4690_96.webp",
+   "date_modified": "2025-08-17T11:04:16.257936+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "management",
+    "neoforge",
+    "storage",
+    "technology"
+   ]
+  },
+  {
+   "project_id": "DvdmuWPu",
+   "slug": "functional-storage-create-aero",
+   "title": "Functional Storage: Create & Aero",
+   "description": "Adds compat between Functional Storage and Create & Create: Aero",
+   "downloads": 3180,
+   "icon_url": "https://cdn.modrinth.com/data/DvdmuWPu/15ff98fc077564ff87f86c7a0e152ec8000c5fa5_96.webp",
+   "date_modified": "2026-08-21T14:24:47.898581+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "neoforge",
+    "storage"
+   ]
+  },
+  {
+   "project_id": "ffIBVRxx",
+   "slug": "more-functional-storage-upgrade",
+   "title": "More Functional Storage Upgrade",
+   "description": "Add more type upgrades for Functional Storage.",
+   "downloads": 778,
+   "icon_url": "https://cdn.modrinth.com/data/ffIBVRxx/44b854d6ced82393e9f288a6d1df1d22b04e8ed3.png",
+   "date_modified": "2026-09-21T02:38:14.939694+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "neoforge",
+    "storage",
+    "utility"
+   ]
+  },
+  {
+   "project_id": "2dTrqgKP",
+   "slug": "more-functional-storage-upgrades-for-exnihilo",
+   "title": "More Functional Storage Upgrades for ExNihilo",
+   "description": "Addon for More Functional Storage Upgrades to support ExNihilo blocks",
+   "downloads": 123,
+   "icon_url": "https://cdn.modrinth.com/data/2dTrqgKP/92ecc1275581397d828198083a758770df43f82e.png",
+   "date_modified": "2026-05-24T03:00:31.719751+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "cursed",
+    "game-mechanics",
+    "magic",
+    "neoforge",
+    "storage",
+    "technology"
+   ]
+  },
+  {
+   "project_id": "y0D2T7r6",
+   "slug": "adaptive-functional-storage",
+   "title": "Adaptive Functional Storage",
+   "description": "Adds an FE-powered adaptive storage layer to Functional Storage with dynamic drawer displays, shared network access, and crafting.",
+   "downloads": 55,
+   "icon_url": "https://cdn.modrinth.com/data/y0D2T7r6/cffaf48124d8121f479bceb5b603714f0d9a0ace.png",
+   "date_modified": "2026-09-01T01:33:27.407714+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "management",
+    "neoforge",
+    "storage",
+    "technology",
+    "transportation",
+    "utility"
+   ]
+  },
+  {
+   "project_id": "hMlaZH8f",
+   "slug": "sophisticated-storage",
+   "title": "Sophisticated Storage",
+   "description": "Storage mod with multiple tiers and functional upgrades",
+   "downloads": 5725157,
+   "icon_url": "https://cdn.modrinth.com/data/hMlaZH8f/8c041db5cf8062e7471d5e239836c8b807853def_96.webp",
+   "date_modified": "2026-11-12T20:08:12.931475+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "forge",
+    "neoforge",
+    "storage"
+   ]
+  },
+  {
+   "project_id": "RCRxC1tD",
+   "slug": "littletiles",
+   "title": "LittleTiles",
+   "description": "This mod allows you to build anything with smaller details. Build amazing looking functional structures like chair, bed, doors, storage.",
+   "downloads": 234517,
+   "icon_url": "https://cdn.modrinth.com/data/RCRxC1tD/1d94749f1ce48c2342f98bca9aaac8f9cee80aa9_96.webp",
+   "date_modified": "2026-11-10T14:30:38.162981+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "decoration",
+    "forge",
+    "neoforge"
+   ]
+  },
+  {
+   "project_id": "ZOgCd8lk",
+   "slug": "aesthetic-storage",
+   "title": "Aesthetic Storage",
+   "description": "Add stylish, functional storage furniture to Minecraft! Craft cabinets, cupboards, and more from all vanilla woods \u2013 with support for Arboreal Nature and Wild Fields woods.",
+   "downloads": 34736,
+   "icon_url": "https://cdn.modrinth.com/data/ZOgCd8lk/80e12afb431abad0ba098eb30a93890222ad4b27_96.webp",
+   "date_modified": "2025-11-03T18:36:28.921416+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "decoration",
+    "fabric",
+    "forge",
+    "neoforge",
+    "storage"
+   ]
+  },
+  {
+   "project_id": "y1qmWFWM",
+   "slug": "applied-generators",
+   "title": "Applied Generators",
+   "description": "Adds FE generators for AE2. Also adds FE storage and some functional blocks.",
+   "downloads": 6861,
+   "icon_url": "https://cdn.modrinth.com/data/y1qmWFWM/d4c8b393ce745b6d6dd9a1353c55b303e86dc3ee.png",
+   "date_modified": "2026-11-05T16:32:46.113378+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "neoforge",
+    "storage",
+    "technology",
+    "transportation"
+   ]
+  }
+ ]
+}
