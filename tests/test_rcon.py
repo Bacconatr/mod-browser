@@ -137,5 +137,74 @@ class VersionTest(unittest.TestCase):
             self.assertEqual(version_from_filename(filename), version, filename)
 
 
+class HostileRcon:
+    """An RCON peer that logs in, then misbehaves after the command."""
+
+    def __init__(self, behaviour: str):
+        self.behaviour = behaviour
+        self.sock = socket.create_server(("127.0.0.1", 0))
+        self.port = self.sock.getsockname()[1]
+        self.stop = threading.Event()
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    def close(self) -> None:
+        self.stop.set()
+        self.sock.close()
+
+    def _serve(self) -> None:
+        try:
+            conn, _ = self.sock.accept()
+        except OSError:
+            return
+        with conn:
+            try:
+                FakeRcon._read(conn)
+                conn.sendall(FakeRcon._packet(1, 2, ""))
+                FakeRcon._read(conn)
+                if self.behaviour == "negative":
+                    conn.sendall(struct.pack("<i", -8) + b"\x00" * 8)
+                elif self.behaviour == "flood":
+                    # A reply that never goes quiet: packets back to back, forever.
+                    chunk = FakeRcon._packet(2, 0, "x" * 4000)
+                    while not self.stop.is_set():
+                        conn.sendall(chunk)
+                elif self.behaviour == "drip":
+                    # A first packet that arrives one byte at a time, each inside the timeout.
+                    packet = FakeRcon._packet(2, 0, "y" * 200)
+                    for byte in packet:
+                        if self.stop.is_set():
+                            return
+                        conn.sendall(bytes([byte]))
+                        self.stop.wait(0.05)
+            except OSError:
+                return
+
+
+class HostileRconTest(unittest.TestCase):
+    def run_against(self, behaviour: str, timeout: float = 0.5):
+        fake = HostileRcon(behaviour)
+        self.addCleanup(fake.close)
+        result: list = []
+        def go():
+            try:
+                result.append(RconClient("127.0.0.1", fake.port, "pw", timeout=timeout).run("list"))
+            except Exception as exc:  # noqa: BLE001
+                result.append(exc)
+        thread = threading.Thread(target=go, daemon=True)
+        thread.start()
+        thread.join(timeout * 6)
+        self.assertFalse(thread.is_alive(), f"{behaviour}: RCON read never finished")
+        return result[0]
+
+    def test_negative_packet_length_is_unavailable(self):
+        self.assertIsInstance(self.run_against("negative"), ServerUnavailable)
+
+    def test_a_reply_that_never_goes_quiet_is_cut_off(self):
+        self.assertIsInstance(self.run_against("flood"), ServerUnavailable)
+
+    def test_a_reply_dripped_byte_by_byte_hits_the_overall_deadline(self):
+        self.assertIsInstance(self.run_against("drip", timeout=0.3), ServerUnavailable)
+
+
 if __name__ == "__main__":
     unittest.main()

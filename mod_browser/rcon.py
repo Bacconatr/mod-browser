@@ -22,6 +22,7 @@ import ipaddress
 import re
 import socket
 import struct
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -31,9 +32,17 @@ from .ports import ServerUnavailable
 ALLOWED_COMMANDS = frozenset({"list", "neoforge tps"})
 
 _LOGIN, _COMMAND = 3, 2
+# The whole reply to one command, across all its packets. `list` with 10
+# players and `neoforge tps` are a few hundred bytes; anything near this is a
+# peer that never stops talking, and it would otherwise hold the status lock.
+MAX_REPLY_BYTES = 64 * 1024
 _COLOUR = re.compile(r"\x1b\[[0-9;]*m|§.")
 # [12Nov2026 13:58:51.604] [main/INFO] ...
 _LOG_STAMP = re.compile(r"^\[(\d{1,2}[A-Za-z]{3}\d{4} \d{2}:\d{2}:\d{2})")
+
+
+class _Closed(ServerUnavailable):
+    """The peer closed the connection."""
 
 
 def strip_colour(text: str) -> str:
@@ -47,23 +56,31 @@ class RconClient:
         self.host, self.port, self.password, self.timeout = host, port, password, timeout
 
     def run(self, command: str) -> str:
+        """One command, answered within `timeout` seconds in all, or ServerUnavailable."""
+        deadline = time.monotonic() + self.timeout
         try:
             with socket.create_connection((self.host, self.port), timeout=self.timeout) as sock:
-                sock.settimeout(self.timeout)
                 self._send(sock, 1, _LOGIN, self.password)
-                request_id, _ = self._read(sock)
+                request_id, _ = self._read(sock, deadline)
                 if request_id == -1:
                     raise ServerUnavailable("RCON refused the password")
                 self._send(sock, 2, _COMMAND, command)
-                parts = [self._read(sock)[1]]
+                parts = [self._read(sock, deadline)[1]]
+                size = len(parts[0])
                 # Minecraft splits replies over 4096 bytes into several
-                # packets and sends no terminator, so read until it goes quiet.
-                sock.settimeout(0.05)
+                # packets and sends no terminator, so read until it goes quiet,
+                # but never past the deadline or MAX_REPLY_BYTES.
                 while True:
                     try:
-                        parts.append(self._read(sock)[1])
-                    except (TimeoutError, socket.timeout, ServerUnavailable):
+                        body = self._read(sock, min(deadline, time.monotonic() + 0.05))
+                    except (TimeoutError, socket.timeout):
                         break
+                    except _Closed:
+                        break
+                    size += len(body[1])
+                    if size > MAX_REPLY_BYTES:
+                        raise ServerUnavailable(f"RCON reply over {MAX_REPLY_BYTES} bytes")
+                    parts.append(body[1])
                 return "".join(parts)
         except ServerUnavailable:
             raise
@@ -76,21 +93,27 @@ class RconClient:
         sock.sendall(struct.pack("<i", len(payload)) + payload)
 
     @staticmethod
-    def _recv_exact(sock: socket.socket, size: int) -> bytes:
+    def _recv_exact(sock: socket.socket, size: int, deadline: float) -> bytes:
         data = b""
         while len(data) < size:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                if data:
+                    raise ServerUnavailable("RCON reply too slow")
+                raise socket.timeout("RCON quiet")
+            sock.settimeout(left)
             chunk = sock.recv(size - len(data))
             if not chunk:
-                raise ServerUnavailable("RCON connection closed")
+                raise _Closed("RCON connection closed")
             data += chunk
         return data
 
     @classmethod
-    def _read(cls, sock: socket.socket) -> tuple[int, str]:
-        (length,) = struct.unpack("<i", cls._recv_exact(sock, 4))
+    def _read(cls, sock: socket.socket, deadline: float) -> tuple[int, str]:
+        (length,) = struct.unpack("<i", cls._recv_exact(sock, 4, deadline))
         if not 10 <= length <= 1 << 16:
             raise ServerUnavailable(f"RCON packet of {length} bytes")
-        packet = cls._recv_exact(sock, length)
+        packet = cls._recv_exact(sock, length, deadline)
         request_id, _kind = struct.unpack("<ii", packet[:8])
         return request_id, packet[8:-2].decode("utf-8", "replace")
 
