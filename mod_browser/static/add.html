@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Find a mod · {{name}}</title>
+<meta name="description" content="Search Modrinth and CurseForge for a mod that runs on NeoForge 1.21.1, and check whether it fits {{name}}.">
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23d6a93f'/%3E%3C/svg%3E">
+<script src="/static/add.js" defer></script>
+</head>
+<body>
+<header class="band" data-state="unknown">
+  <div class="wrap">
+    <h1><a href="/">{{name}}</a></h1>
+    <p class="detail">Find a mod for NeoForge 1.21.1. Server address <strong>{{address}}</strong>.</p>
+  </div>
+</header>
+<main class="wrap find">
+  <form id="find" class="filters" role="search">
+    <div class="field grow">
+      <label for="q">Search Modrinth, or paste a CurseForge project ID</label>
+      <div class="search">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg>
+        <input id="q" type="search" minlength="2" maxlength="100" autocomplete="off" spellcheck="false" placeholder="e.g. create connected, or 1793084">
+      </div>
+    </div>
+    <div class="field"><label for="go" class="sr">Search</label><button id="go" class="button solid" type="submit">Search</button></div>
+  </form>
+  <ul id="warnings" class="notes" aria-live="polite"></ul>
+  <p id="result-line" class="muted small" aria-live="polite"></p>
+  <ul id="results" class="found-list"></ul>
+  <section id="detail" class="detail-panel" hidden aria-live="polite"></section>
+</main>
+<noscript><p class="wrap">This page needs JavaScript. Search on Modrinth or CurseForge and tell the owner what you want.</p></noscript>
+</body>
+</html>

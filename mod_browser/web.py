@@ -8,6 +8,11 @@ Public listener (behind Caddy, Internet-facing, no login):
                     page's search box uses these, so matching lives here only)
   GET /api/health   liveness
 
+  GET /add          the "find a mod" page (search, version picker, verdict)
+  GET /api/catalog/search?q=            Modrinth (and CurseForge when enabled), or a pasted CurseForge id
+  GET /api/catalog/versions?source=&id= the versions for NeoForge 1.21.1 and the default
+  GET /api/catalog/resolve?source=&id=&version=   what adding it would do
+
 Admin listener (bound to loopback inside the container; nothing proxies it):
   GET /admin-api/v1/health
 
@@ -31,9 +36,11 @@ from __future__ import annotations
 import html
 import json
 import mimetypes
+import re
 import sys
 import threading
 import traceback
+from dataclasses import dataclass
 from functools import lru_cache
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -41,11 +48,17 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlsplit
 
+from .catalog import SOURCES, camel, default_version
 from .pack import PackCatalog, search
+from .ports import CatalogPort, InstalledPort, JarPort
+from .resolver import NotFound, resolve
 from .status import StatusMonitor
 
 STATIC = Path(__file__).parent / "static"
 _MAX_QUERY = 200
+_ID = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+# Resolving can download jars from a CDN, so only a few may run at once.
+MAX_RESOLVES = 3
 # Connections served at once per listener. Caddy keeps a small pool of
 # upstream connections; anything past this is closed at once rather than
 # given a thread, so a burst cannot exhaust the container's pids limit.
@@ -66,6 +79,15 @@ SECURITY_HEADERS = {
 Response = tuple[int, str, bytes, dict[str, str]]
 
 
+@dataclass
+class Browse:
+    """The three ports the catalog routes read through."""
+
+    catalog: CatalogPort
+    jars: JarPort
+    installed: InstalledPort
+
+
 def _json(body: Any, status: int = 200) -> Response:
     return status, "application/json", json.dumps(body, separators=(",", ":")).encode(), {"Cache-Control": "no-store"}
 
@@ -77,13 +99,21 @@ def _error(status: HTTPStatus, message: str) -> Response:
 class App:
     """The routes, with the ports wired in. Tests build one with fakes."""
 
-    def __init__(self, monitor: StatusMonitor, catalog: PackCatalog, name: str = "Tel Aviv"):
-        self.monitor, self.catalog, self.name = monitor, catalog, name
-        text = (STATIC / "index.html").read_text()
-        for key, value in {"name": name, "address": monitor.address}.items():
-            text = text.replace("{{" + key + "}}", html.escape(value))
-        self._page = text.encode()
+    def __init__(self, monitor: StatusMonitor, catalog: PackCatalog, name: str = "Tel Aviv",
+                 browse: "Browse | None" = None):
+        self.monitor, self.catalog, self.name, self.browse = monitor, catalog, name, browse
+        self._page, self._add_page = (self._render(f, name, monitor.address, browse is not None)
+                                      for f in ("index.html", "add.html"))
+        self._resolving = threading.BoundedSemaphore(MAX_RESOLVES)
         self._mods_json: tuple[str, bytes] | None = None
+
+    @staticmethod
+    def _render(filename: str, name: str, address: str, browsing: bool) -> bytes:
+        text = (STATIC / filename).read_text()
+        text = text.replace("{{addlink}}", '<p><a href="/add">Looking for a mod that is not in the pack? Find one.</a></p>' if browsing else "")
+        for key, value in {"name": name, "address": address}.items():
+            text = text.replace("{{" + key + "}}", html.escape(value))
+        return text.encode()
 
     # ---- public ----
     def page(self, query: dict[str, list[str]]) -> Response:
@@ -110,9 +140,75 @@ class App:
     def health(self, query: dict[str, list[str]]) -> Response:
         return _json({"ok": True})
 
+    # ---- catalog: read-only browsing; requests come with the queue ----
+    def add_page(self, query: dict[str, list[str]]) -> Response:
+        return 200, "text/html; charset=utf-8", self._add_page, {"Cache-Control": "no-cache"}
+
+    def _failed(self, exc: Exception) -> Response:
+        if isinstance(exc, NotFound):
+            return _error(HTTPStatus.NOT_FOUND, str(exc))
+        sys.stderr.write("mod-browser: catalog request failed\n" + "".join(traceback.format_exception(exc)))
+        return _error(HTTPStatus.BAD_GATEWAY, "Modrinth or CurseForge did not answer; try again shortly.")
+
+    def catalog_search(self, query: dict[str, list[str]]) -> Response:
+        q = ((query.get("q") or [""])[0]).strip()[:100]
+        if len(q) < 2:
+            return _error(HTTPStatus.BAD_REQUEST, "search needs at least two characters")
+        projects, warnings = self.browse.catalog.search(q)
+        return _json({"query": q, "results": camel(projects), "warnings": warnings})
+
+    def _source_and_id(self, query: dict[str, list[str]]) -> tuple[str, str] | None:
+        source, ident = ((query.get(k) or [""])[0] for k in ("source", "id"))
+        return (source, ident) if source in SOURCES and _ID.match(ident) else None
+
+    def catalog_versions(self, query: dict[str, list[str]]) -> Response:
+        want = self._source_and_id(query)
+        if want is None:
+            return _error(HTTPStatus.BAD_REQUEST, "source and id are required")
+        try:
+            versions = self.browse.catalog.versions(*want)
+        except Exception as exc:  # noqa: BLE001
+            return self._failed(exc)
+        pick = default_version(versions)
+        return _json({
+            "default": {"id": pick[0].id, "fallback": pick[1]} if pick else None,
+            "versions": [{"id": v.id, "versionNumber": v.version_number, "channel": v.channel,
+                          "publishedAt": v.published_at, "fileName": v.file_name, "blocked": v.blocked}
+                         for v in versions],
+        })
+
+    def catalog_resolve(self, query: dict[str, list[str]]) -> Response:
+        want = self._source_and_id(query)
+        if want is None:
+            return _error(HTTPStatus.BAD_REQUEST, "source and id are required")
+        version = (query.get("version") or [None])[0]
+        if version is not None and not _ID.match(version):
+            return _error(HTTPStatus.BAD_REQUEST, "bad version")
+        if not self._resolving.acquire(blocking=False):
+            return _error(HTTPStatus.TOO_MANY_REQUESTS, "busy, try again in a moment")
+        try:
+            b = self.browse
+            return _json(camel(resolve(b.catalog, b.jars, b.installed, *want, version)))
+        except Exception as exc:  # noqa: BLE001
+            return self._failed(exc)
+        finally:
+            self._resolving.release()
+
     @property
     def public_routes(self) -> dict[str, Callable[[dict[str, list[str]]], Response]]:
-        return {"/": self.page, "/api/status": self.status, "/api/mods": self.mods, "/api/health": self.health}
+        routes = {"/": self.page, "/api/status": self.status, "/api/mods": self.mods, "/api/health": self.health}
+        if self.browse:
+            routes.update({"/add": self.add_page, "/api/catalog/search": self._guarded(self.catalog_search),
+                           "/api/catalog/versions": self.catalog_versions, "/api/catalog/resolve": self.catalog_resolve})
+        return routes
+
+    def _guarded(self, route: Callable[[dict[str, list[str]]], Response]) -> Callable[[dict[str, list[str]]], Response]:
+        def wrapped(query: dict[str, list[str]]) -> Response:
+            try:
+                return route(query)
+            except Exception as exc:  # noqa: BLE001
+                return self._failed(exc)
+        return wrapped
 
     # ---- admin (loopback only) ----
     @property

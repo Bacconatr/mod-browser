@@ -1,0 +1,11 @@
+{
+ "id": "LNytGWDc",
+ "slug": "create",
+ "title": "Create",
+ "description": "Aesthetic Technology that empowers the Player",
+ "downloads": 28093551,
+ "icon_url": "https://cdn.modrinth.com/data/LNytGWDc/61d716699bcf1ec42ed4926a9e1c7311be6087e2_96.webp",
+ "updated": "2026-04-21T22:20:03.579201Z",
+ "client_side": "optional",
+ "server_side": "required"
+}

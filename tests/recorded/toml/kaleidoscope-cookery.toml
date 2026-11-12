@@ -1,0 +1,38 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "BSD-3-Clause + CC BY-NC-SA 4.0"
+
+[[accessTransformers]]
+file = "META-INF/accesstransformer.cfg"
+
+[[mixins]]
+config = "kaleidoscope_cookery.mixins.json"
+
+[[mods]]
+modId = "kaleidoscope_cookery"
+version = "1.6.0-neoforge+mc1.21.1"
+displayName = "Kaleidoscope Cookery"
+authors = "ysbbbbbb, tartaric_acid, Azumic"
+description = '''A Minecraft mod that adds immersive cooking systems and delicious recipes to enhance your culinary adventure.'''
+enumExtensions="META-INF/enumextensions.json"
+
+[[dependencies."kaleidoscope_cookery"]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies."kaleidoscope_cookery"]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1,1.21.2)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies."kaleidoscope_cookery"]]
+modId = "kubejs"
+type = "optional"
+versionRange = "[2101.7.2-build.309,)"
+ordering = "NONE"
+side = "BOTH"

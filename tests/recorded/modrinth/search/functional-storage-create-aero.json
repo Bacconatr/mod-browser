@@ -1,0 +1,20 @@
+{
+ "total_hits": 1,
+ "hits": [
+  {
+   "project_id": "DvdmuWPu",
+   "slug": "functional-storage-create-aero",
+   "title": "Functional Storage: Create & Aero",
+   "description": "Adds compat between Functional Storage and Create & Create: Aero",
+   "downloads": 3180,
+   "icon_url": "https://cdn.modrinth.com/data/DvdmuWPu/15ff98fc077564ff87f86c7a0e152ec8000c5fa5_96.webp",
+   "date_modified": "2026-08-21T14:24:47.898581+00:00",
+   "client_side": "required",
+   "server_side": "required",
+   "categories": [
+    "neoforge",
+    "storage"
+   ]
+  }
+ ]
+}

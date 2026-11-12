@@ -1,0 +1,11 @@
+{
+ "id": "RIVAL001",
+ "slug": "rival-mod",
+ "title": "Rival Mod",
+ "description": "Declares itself incompatible with Create.",
+ "downloads": 1,
+ "icon_url": null,
+ "updated": "2026-11-01T00:00:00Z",
+ "client_side": "required",
+ "server_side": "required"
+}

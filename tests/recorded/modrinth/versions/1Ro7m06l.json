@@ -1,0 +1,170 @@
+[
+ {
+  "id": "ZrffET42",
+  "project_id": "1Ro7m06l",
+  "name": "1.21-4.0.52",
+  "version_number": "1.21-4.0.52",
+  "version_type": "beta",
+  "date_published": "2026-11-04T21:10:26.012845Z",
+  "dependencies": [],
+  "files": [
+   {
+    "filename": "titanium-1.21-4.0.52.jar",
+    "url": "https://cdn.modrinth.com/data/1Ro7m06l/versions/ZrffET42/titanium-1.21-4.0.52.jar",
+    "primary": true,
+    "hashes": {
+     "sha1": "b46f625333c9c570eed9962a355f37687d39e731",
+     "sha512": "8fbdc6840c7f670f952018563f2e24b0666de392df2e2753bbd17548f9ea77f3291ee5047c32342a4e7dd017ad5ccc7e66999fbb2cd3693ddc888de5825cb2e2"
+    },
+    "size": 608119
+   }
+  ]
+ },
+ {
+  "id": "vbCgpf68",
+  "project_id": "1Ro7m06l",
+  "name": "1.21-4.0.51",
+  "version_number": "1.21-4.0.51",
+  "version_type": "beta",
+  "date_published": "2026-10-11T13:35:17.868560Z",
+  "dependencies": [],
+  "files": [
+   {
+    "filename": "titanium-1.21-4.0.51.jar",
+    "url": "https://cdn.modrinth.com/data/1Ro7m06l/versions/vbCgpf68/titanium-1.21-4.0.51.jar",
+    "primary": true,
+    "hashes": {
+     "sha1": "aeb581ba5bdaac3bf3d48bee78488151e9c3dfd1",
+     "sha512": "59a1470b5b3e103f52fa9c0f2f334bb3b28cdbaba74c95234528a40a558596d598227968e5812502a41a9ee24993b00c748cee913abae8fbb4ab7df79d04ab29"
+    },
+    "size": 608070
+   }
+  ]
+ },
+ {
+  "id": "zCzYA9mW",
+  "project_id": "1Ro7m06l",
+  "name": "1.21-4.0.50",
+  "version_number": "1.21-4.0.50",
+  "version_type": "beta",
+  "date_published": "2026-08-29T11:07:43.632010Z",
+  "dependencies": [],
+  "files": [
+   {
+    "filename": "titanium-1.21-4.0.50.jar",
+    "url": "https://cdn.modrinth.com/data/1Ro7m06l/versions/zCzYA9mW/titanium-1.21-4.0.50.jar",
+    "primary": true,
+    "hashes": {
+     "sha512": "8569e4d3331ba8a23f67bf46b0697d6a5a325deed696823cede68d8d4fef119669f1086767077af76013211617fef6c0cede310c5b7dfc1b3f9a7f37bf843908",
+     "sha1": "c57a545f81104c5ee87bf1e0af55a6e87598573b"
+    },
+    "size": 607012
+   }
+  ]
+ },
+ {
+  "id": "Vo4g2PfW",
+  "project_id": "1Ro7m06l",
+  "name": "1.21-4.0.49",
+  "version_number": "1.21-4.0.49",
+  "version_type": "beta",
+  "date_published": "2026-08-29T08:59:29.226627Z",
+  "dependencies": [],
+  "files": [
+   {
+    "filename": "titanium-1.21-4.0.49.jar",
+    "url": "https://cdn.modrinth.com/data/1Ro7m06l/versions/Vo4g2PfW/titanium-1.21-4.0.49.jar",
+    "primary": true,
+    "hashes": {
+     "sha1": "4967d6ebfb3e3a971b1e2e53d313dd40a4c84cca",
+     "sha512": "3045c5d362bdb1045deae866304850755a774a262eff9b95107ad83cadba099165cddc14522512b492bfbab1c53e2a9ccf383388a5a35dca7c8f73c181c4a308"
+    },
+    "size": 607866
+   }
+  ]
+ },
+ {
+  "id": "7AWtSmd7",
+  "project_id": "1Ro7m06l",
+  "name": "1.21-4.0.45",
+  "version_number": "1.21-4.0.45",
+  "version_type": "beta",
+  "date_published": "2026-07-13T20:03:45.414387Z",
+  "dependencies": [],
+  "files": [
+   {
+    "filename": "titanium-1.21-4.0.45.jar",
+    "url": "https://cdn.modrinth.com/data/1Ro7m06l/versions/7AWtSmd7/titanium-1.21-4.0.45.jar",
+    "primary": true,
+    "hashes": {
+     "sha512": "42a386e1cfbeb96049fbdd79fe438c71826a6864f86933e0e62cf4a50728a9d5b6bdce360d70316b234e5c991076c61eb2f922999624ad4cb2a1f612acb8ace3",
+     "sha1": "c718d4d8713b83964f9b8feea4443a25feb84fc9"
+    },
+    "size": 606801
+   }
+  ]
+ },
+ {
+  "id": "ENONQ5aP",
+  "project_id": "1Ro7m06l",
+  "name": "1.21-4.0.43",
+  "version_number": "1.21-4.0.43",
+  "version_type": "beta",
+  "date_published": "2026-04-19T16:57:04.328051Z",
+  "dependencies": [],
+  "files": [
+   {
+    "filename": "titanium-1.21-4.0.43.jar",
+    "url": "https://cdn.modrinth.com/data/1Ro7m06l/versions/ENONQ5aP/titanium-1.21-4.0.43.jar",
+    "primary": true,
+    "hashes": {
+     "sha1": "e2f62d1bcdd38dd91679a2114e9946d9415746ee",
+     "sha512": "2ea83a004b1037410a40899bb17e22832a5adb129495b68bdf13fbdff75a6d9599860876dc2f8fb00446351de3e6be866c93b962f8e4c23b88e3434b3cefd7da"
+    },
+    "size": 605765
+   }
+  ]
+ },
+ {
+  "id": "LmipxHTo",
+  "project_id": "1Ro7m06l",
+  "name": "1.21-4.0.42",
+  "version_number": "1.21-4.0.42",
+  "version_type": "beta",
+  "date_published": "2026-02-22T12:09:58.360570Z",
+  "dependencies": [],
+  "files": [
+   {
+    "filename": "titanium-1.21-4.0.42.jar",
+    "url": "https://cdn.modrinth.com/data/1Ro7m06l/versions/LmipxHTo/titanium-1.21-4.0.42.jar",
+    "primary": true,
+    "hashes": {
+     "sha512": "34e7ee1e63e6b87bc44df1273f452ebdb2772de58b551b1ff32eb2dbfe19a9bd2514e37c262c8e4799c8712c49172f68a164545368f2816ca1b1009e913d2668",
+     "sha1": "aa71953b17a0a3618c6a44be428cf98e6885665b"
+    },
+    "size": 605755
+   }
+  ]
+ },
+ {
+  "id": "XweNZVuM",
+  "project_id": "1Ro7m06l",
+  "name": "1.21-4.0.40",
+  "version_number": "1.21-4.0.40",
+  "version_type": "beta",
+  "date_published": "2025-08-11T15:24:54.688295Z",
+  "dependencies": [],
+  "files": [
+   {
+    "filename": "titanium-1.21-4.0.40.jar",
+    "url": "https://cdn.modrinth.com/data/1Ro7m06l/versions/XweNZVuM/titanium-1.21-4.0.40.jar",
+    "primary": true,
+    "hashes": {
+     "sha1": "14d3bd564642256849967bbc7e79248c67ca5250",
+     "sha512": "380bdb3105387441427981cad9c11b8bdd82222282d803bd09e975ecafc376a703da6a41416f2af7cb95be0e2f67f5af2bb517320479506585d7e2bf7852caa7"
+    },
+    "size": 605724
+   }
+  ]
+ }
+]

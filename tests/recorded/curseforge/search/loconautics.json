@@ -1,0 +1,23 @@
+{
+ "data": [
+  {
+   "id": 1793084,
+   "gameId": 432,
+   "name": "Create: Loconautics",
+   "slug": "create-loconautics",
+   "summary": "Trains that fly.",
+   "downloadCount": 9000,
+   "dateModified": "2026-07-18T16:40:00.00Z",
+   "allowModDistribution": false,
+   "logo": {
+    "thumbnailUrl": "https://media.forgecdn.net/avatars/thumbnails/1793084/64x64.png"
+   }
+  }
+ ],
+ "pagination": {
+  "index": 0,
+  "pageSize": 20,
+  "resultCount": 1,
+  "totalCount": 1
+ }
+}

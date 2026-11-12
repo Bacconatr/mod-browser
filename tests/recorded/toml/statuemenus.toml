@@ -1,0 +1,49 @@
+modLoader = "javafml"
+loaderVersion = "*"
+license = "MPL-2.0"
+issueTrackerURL = "https://github.com/Fuzss/statuemenus/issues"
+
+[[mods]]
+modId = "statuemenus"
+displayName = "Statue Menus"
+description = "A library for creating configuration screens for armor stand-like entities."
+version = "21.1.0"
+authors = "Fuzs"
+logoFile = "mod_banner.png"
+logoBlur = false
+displayURL = "https://github.com/Fuzss/statuemenus"
+updateJSONURL = "https://raw.githubusercontent.com/Fuzss/modresources/main/update/statuemenus.json"
+displayTest = "IGNORE_ALL_VERSION"
+
+[[mixins]]
+config="statuemenus.common.mixins.json"
+
+[[mixins]]
+config="statuemenus.neoforge.mixins.json"
+
+[[dependencies.statuemenus]]
+modId = "neoforge"
+mandatory = true
+type = "required"
+versionRange = "[21.1.21,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.statuemenus]]
+modId = "minecraft"
+mandatory = true
+type = "required"
+versionRange = "[1.21.1]"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.statuemenus]]
+modId = "puzzleslib"
+mandatory = true
+type = "required"
+versionRange = "[21.1.8,)"
+ordering = "NONE"
+side = "BOTH"
+
+[modproperties.statuemenus]
+catalogueImageIcon = "mod_logo.png"

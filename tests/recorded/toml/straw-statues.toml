@@ -1,0 +1,57 @@
+modLoader = "javafml"
+loaderVersion = "*"
+license = "MPL-2.0"
+issueTrackerURL = "https://github.com/Fuzss/strawstatues/issues"
+
+[[mods]]
+modId = "strawstatues"
+displayName = "Straw Statues"
+description = "Bring some life to your builds with player statues of your favorite Minecrafters!"
+version = "21.1.0"
+authors = "Fuzs"
+logoFile = "mod_banner.png"
+logoBlur = false
+displayURL = "https://github.com/Fuzss/strawstatues"
+updateJSONURL = "https://raw.githubusercontent.com/Fuzss/modresources/main/update/strawstatues.json"
+displayTest = "MATCH_VERSION"
+
+[[mixins]]
+config="strawstatues.common.mixins.json"
+
+[[mixins]]
+config="strawstatues.neoforge.mixins.json"
+
+[[dependencies.strawstatues]]
+modId = "neoforge"
+mandatory = true
+type = "required"
+versionRange = "[21.1.21,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.strawstatues]]
+modId = "minecraft"
+mandatory = true
+type = "required"
+versionRange = "[1.21.1]"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.strawstatues]]
+modId = "puzzleslib"
+mandatory = true
+type = "required"
+versionRange = "[21.1.8,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.strawstatues]]
+modId = "statuemenus"
+mandatory = true
+type = "required"
+versionRange = "*"
+ordering = "NONE"
+side = "BOTH"
+
+[modproperties.strawstatues]
+catalogueImageIcon = "mod_logo.png"

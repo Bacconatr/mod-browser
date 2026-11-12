@@ -1,0 +1,27 @@
+[
+ {
+  "id": "RIVALV01",
+  "project_id": "RIVAL001",
+  "name": "1.0.0",
+  "version_number": "1.0.0",
+  "version_type": "release",
+  "date_published": "2026-11-01T00:00:00Z",
+  "dependencies": [
+   {
+    "version_id": null,
+    "project_id": "QAGBst4M",
+    "file_name": null,
+    "dependency_type": "required"
+   }
+  ],
+  "files": [
+   {
+    "filename": "rival-1.0.0.jar",
+    "url": "https://cdn.modrinth.com/data/RIVAL001/versions/RIVALV01/rival-1.0.0.jar",
+    "primary": true,
+    "hashes": {},
+    "size": 1
+   }
+  ]
+ }
+]
