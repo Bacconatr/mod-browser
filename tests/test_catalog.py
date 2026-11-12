@@ -311,3 +311,36 @@ class PagesTest(BrowseCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RedirectHeaderTest(unittest.TestCase):
+    def test_catalog_key_is_removed_before_cross_origin_redirect(self):
+        from io import BytesIO
+        from mod_browser.net import FetchHttp
+
+        seen = []
+
+        class Response:
+            def __init__(self, status, location=None):
+                self.status, self.location, self.reads = status, location, 0
+            def getheader(self, name):
+                return self.location if name == "Location" else None
+            def read(self, _size):
+                self.reads += 1
+                return b"{}" if self.status == 200 and self.reads == 1 else b""
+
+        class Conn:
+            def __init__(self, host):
+                self.host = host
+            def request(self, _method, _path, headers):
+                seen.append((self.host, headers))
+            def getresponse(self):
+                return Response(302, "https://cdn.modrinth.com/data") if self.host == "api.curseforge.com" else Response(200)
+            def close(self):
+                pass
+
+        http = FetchHttp()
+        http._connect = lambda _scheme, host, _port, _timeout: Conn(host)
+        self.assertEqual(http.json("https://api.curseforge.com/v1/mods/1", {"x-api-key": "fake-secret"}), {})
+        self.assertEqual(seen[0][1]["x-api-key"], "fake-secret")
+        self.assertNotIn("x-api-key", seen[1][1])

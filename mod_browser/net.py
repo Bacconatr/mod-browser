@@ -85,7 +85,10 @@ class FetchHttp:
                 if 300 <= response.status < 400 and location:
                     if hop >= MAX_REDIRECTS:
                         raise FetchError("too many redirects")
-                    url = urljoin(url, location)
+                    next_url = urljoin(url, location)
+                    if urlsplit(next_url).netloc != urlsplit(url).netloc:
+                        headers = {}  # never forward a catalog API key to a CDN or another origin
+                    url = next_url
                     continue
                 if response.status != 200:
                     raise FetchError(f"{host} answered {response.status}")
