@@ -74,12 +74,16 @@ def extras_from_notes(notes: str) -> dict[str, str | None]:
     extras: dict[str, str | None] = {}
     # One "### `<jar>`" block per extra: a side line naming the metafile, then its note.
     for block in re.split(r"^### ", section.group(1), flags=re.M)[1:]:
-        paths = [p for p in _METAFILE.findall(block) if "/" in p or p.endswith(".pw.toml")]
+        paths = _METAFILE.findall(block)
         if not paths:
             continue
         date = _DATE.search(block)
         extras[paths[0]] = date.group(1) if date else None
     return extras
+
+
+class PackUnreadable(Exception):
+    """The pack repo could not be read, and no earlier read succeeded."""
 
 
 class PackCatalog:
@@ -90,6 +94,7 @@ class PackCatalog:
         self._head: str | None = None
         self._checked = float("-inf")
         self._cache: dict[str, Any] | None = None
+        self._error: Exception | None = None
 
     def _git(self, *args: str) -> str:
         # safe.directory: the repo is root's, mounted read-only, and the app
@@ -100,13 +105,22 @@ class PackCatalog:
         ).stdout
 
     def catalog(self) -> dict[str, Any]:
+        """The current catalog. A failed read is remembered for `max_age` too,
+        so a broken pack costs one git run per interval, not one per request;
+        the last good catalog keeps being served meanwhile, if there is one."""
         with self._lock:
-            if self._cache is None or self._clock() - self._checked >= self.max_age:
+            if self._clock() - self._checked >= self.max_age:
                 self._checked = self._clock()
-                head = self._git("rev-parse", "HEAD").strip()
-                if head != self._head or self._cache is None:
-                    self._cache = self._build(head)
-                    self._head = head
+                try:
+                    head = self._git("rev-parse", "HEAD").strip()
+                    if head != self._head or self._cache is None:
+                        self._cache = self._build(head)
+                        self._head = head
+                    self._error = None
+                except Exception as exc:
+                    self._error = exc
+            if self._cache is None:
+                raise PackUnreadable(str(self._error))
             return self._cache
 
     def _history(self) -> tuple[dict[str, dict[str, Any]], str | None]:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import tempfile
 import unittest
 import urllib.error
@@ -11,8 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from mod_browser.pack import PackCatalog
-from mod_browser.status import StatusMonitor
+from mod_browser.pack import PackCatalog, PackUnreadable
+from mod_browser.status import StatusMonitor, parse_tps
 from mod_browser.web import App, Servers
 from tests.fakes import LATER_MOD, FakeServer, add_mod, make_pack
 
@@ -173,6 +174,48 @@ class ApiTest(unittest.TestCase):
     def test_writes_are_refused(self):
         for method in ("POST", "PUT", "DELETE"):
             self.assertEqual(self.get(self.public + "/api/mods", method=method)[0], 405, method)
+
+    def test_refused_body_cannot_smuggle_a_second_request(self):
+        # The body of a refused POST must never be read as the next request on
+        # a connection Caddy reuses.
+        smuggled = b"GET /api/health HTTP/1.1\r\nHost: a\r\n\r\n"
+        port = self.servers.public.server_address[1]
+        for method in (b"POST", b"GET"):
+            with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+                sock.sendall(method + b" /api/status HTTP/1.1\r\nHost: a\r\nContent-Length: "
+                             + str(len(smuggled)).encode() + b"\r\n\r\n" + smuggled)
+                replies = b""
+                while chunk := sock.recv(65536):
+                    replies += chunk
+            self.assertEqual(replies.count(b"HTTP/1.1 "), 1, (method, replies))
+            self.assertIn(b"Connection: close", replies)
+        status, headers, _ = self.get(self.public + "/api/mods", method="POST")
+        self.assertEqual((status, headers.get("Allow")), (405, "GET, HEAD"))
+
+    def test_a_pack_that_breaks_later_keeps_serving_the_last_good_list(self):
+        self.assertEqual(self.json("/api/mods")["count"], 4)
+        (self.pack / "pack.toml").write_text("not = [toml")
+        add_mod(self.pack, "mods/x.pw.toml", LATER_MOD, "break", date="2026-11-22T00:00:00Z")
+        self.assertEqual(self.json("/api/mods")["count"], 4)
+
+    def test_a_broken_pack_is_read_once_per_interval_not_per_request(self):
+        now = [0.0]
+        catalog = PackCatalog(Path(self.tmp.name) / "no-such-pack", max_age=30, clock=lambda: now[0])
+        calls = []
+        real = catalog._git
+        catalog._git = lambda *a: calls.append(a) or real(*a)
+        for _ in range(5):
+            with self.assertRaises(PackUnreadable):
+                catalog.catalog()
+        self.assertEqual(len(calls), 1)
+        now[0] = 30.0
+        with self.assertRaises(PackUnreadable):
+            catalog.catalog()
+        self.assertEqual(len(calls), 2)
+
+    def test_tps_without_an_overall_line_reports_the_slowest_dimension(self):
+        self.assertEqual(parse_tps("Overworld: 14.000 TPS (71.4 ms/tick)\nThe Nether: 20.000 TPS (1.0 ms/tick)\n"),
+                         {"tps": 14.0, "msPerTick": 71.4})
 
     def test_a_broken_pack_answers_503_and_the_listener_lives(self):
         (self.pack / "pack.toml").write_text("not = [toml")

@@ -42,7 +42,8 @@ def parse_tps(reply: str) -> dict[str, Any] | None:
     rows = {m.group(1).strip(): (float(m.group(2)), float(m.group(3))) for m in _TPS.finditer(reply)}
     if not rows:
         return None
-    overall = rows.get("Overall") or rows.get("Overworld") or next(iter(rows.values()))
+    # No "Overall" line: report the slowest dimension, never a flattering one.
+    overall = rows.get("Overall") or min(rows.values())
     return {"tps": round(min(overall[0], 20.0), 2), "msPerTick": round(overall[1], 2)}
 
 

@@ -17,7 +17,7 @@ a commit of this repo. Bump the pin in a Homelab PR, like an image tag.
 | Who is online, the max | RCON `list` |
 | TPS, ms per tick | RCON `neoforge tps` (the `Overall` line) |
 | Last restart | First line of the server's `logs/latest.log`, rewritten on every start |
-| Mods: name, jar, side, source | The packwiz metafiles (`*.pw.toml`) in the pack repo |
+| Mods: name, jar, side, source | The packwiz metafiles (`*.pw.toml`) in the pack repo; the search box asks `/api/mods?q=`, so matching lives on the server only |
 | Version | Parsed from the jar's filename (packwiz stores no version string) |
 | Added by / added on | The pack repo's git history; see below |
 | Server address | `MOD_BROWSER_SERVER_ADDRESS` |
@@ -47,6 +47,11 @@ This runs on the Internet-facing guest, so it holds as little as it can:
 - **Standard library only.** No third-party Python packages in the image.
 - Strict CSP (`default-src 'none'`, scripts and styles from self only), and
   every API value is written into the page with `textContent`.
+- GET and HEAD only. A request with a body closes its connection after the
+  answer, so an unread body is never parsed as a second request on a
+  connection Caddy reuses. At most 48 connections at once, 15 s idle timeout.
+- A broken pack is retried once per 30 s, not per request, and the last good
+  list keeps being served. Route failures are logged to stderr with a traceback.
 
 ## Layout
 

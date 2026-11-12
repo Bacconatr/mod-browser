@@ -87,7 +87,6 @@ async function refreshStatus() {
 }
 
 // ---- mods ----
-let mods = [];
 
 function addedCell(mod) {
   if (mod.origin === "base") return [el("span", { class: "added-by", text: "Base pack" })];
@@ -115,18 +114,12 @@ function row(mod) {
   ]);
 }
 
-function matches(mod, words, side, kind) {
-  if (side && mod.side !== side) return false;
-  if (kind && mod.kind !== kind) return false;
-  const haystack = `${mod.name} ${mod.id} ${mod.filename}`.toLowerCase();
-  return words.every((word) => haystack.includes(word));
-}
+// Matching happens on the server (/api/mods?q=&side=&kind=), so the page and
+// the API can never disagree about what a search finds.
+let total = 0;
+let searchSeq = 0;
 
-function renderMods() {
-  const words = $("q").value.toLowerCase().split(/\s+/).filter(Boolean);
-  const side = $("side").value;
-  const kind = $("kind").value;
-  const found = mods.filter((mod) => matches(mod, words, side, kind));
+function renderMods(found) {
   const body = $("mod-rows");
   body.replaceChildren(...found.map(row));
   if (!found.length) {
@@ -134,24 +127,40 @@ function renderMods() {
     body.append(el("tr", {}, [el("td", { colspan: "5", class: "empty",
       text: query ? `Nothing in the pack matches “${query}”. It isn't installed, or it goes by another name.` : "Nothing matches these filters." })]));
   }
-  $("result-line").textContent = found.length === mods.length
-    ? `Showing all ${mods.length}.`
-    : `${found.length} of ${mods.length} match.`;
+  $("result-line").textContent = found.length === total
+    ? `Showing all ${total}.`
+    : `${found.length} of ${total} match.`;
 }
 
-async function loadMods() {
+async function search() {
+  const seq = ++searchSeq;
+  const params = new URLSearchParams();
+  for (const id of ["q", "side", "kind"]) {
+    const value = $(id).value.trim();
+    if (value) params.set(id, value);
+  }
   try {
-    const response = await fetch("/api/mods");
+    const response = await fetch(`/api/mods${params.size ? `?${params}` : ""}`);
     if (!response.ok) throw new Error(String(response.status));
     const data = await response.json();
-    mods = data.mods;
+    if (seq !== searchSeq) return; // a newer keystroke's answer wins
+    total = data.count;
     $("mod-count").textContent = String(data.count);
     const pack = data.pack;
-    $("pack-line").textContent = `${pack.name} ${pack.version || ""} · Minecraft ${pack.minecraft} · NeoForge ${pack.neoforge}`;
-    renderMods();
+    const parts = [`${pack.name}${pack.version ? ` ${pack.version}` : ""}`];
+    if (pack.minecraft) parts.push(`Minecraft ${pack.minecraft}`);
+    if (pack.neoforge) parts.push(`NeoForge ${pack.neoforge}`);
+    $("pack-line").textContent = parts.join(" · ");
+    renderMods(data.mods);
   } catch {
-    $("result-line").textContent = "The mod list couldn't be read just now. Reload the page in a minute.";
+    if (seq === searchSeq) $("result-line").textContent = "The mod list couldn't be read just now. Try again in a minute.";
   }
+}
+
+let searchTimer = 0;
+function searchSoon() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(search, 150);
 }
 
 // ---- wiring ----
@@ -173,9 +182,10 @@ document.addEventListener("DOMContentLoaded", () => {
   $("copy").addEventListener("click", copyAddress);
   $("address").addEventListener("focus", (event) => event.target.select());
   $("filters").addEventListener("submit", (event) => event.preventDefault());
-  for (const id of ["q", "side", "kind"]) $(id).addEventListener("input", renderMods);
+  $("q").addEventListener("input", searchSoon);
+  for (const id of ["side", "kind"]) $(id).addEventListener("change", search);
   refreshStatus();
-  loadMods();
+  search();
   setInterval(() => { if (!document.hidden) refreshStatus(); }, STATUS_EVERY_MS);
   // The relative times keep moving between checks.
   setInterval(() => { if (lastStatus) renderStatus(lastStatus); }, 30000);
