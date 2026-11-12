@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>{{name}} · server status and mods</title>
+<meta name="description" content="Whether {{name}} is up, who is online, and every mod in the pack.">
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23d6a93f'/%3E%3C/svg%3E">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="band" data-state="unknown" aria-live="polite">
+  <div class="wrap band-grid">
+    <div class="ident">
+      <h1>{{name}}</h1>
+      <p class="state"><span class="lamp" aria-hidden="true"></span><strong id="state-label">Checking the server…</strong> <span id="checked" class="muted"></span></p>
+      <p id="state-detail" class="detail"></p>
+    </div>
+    <div class="join">
+      <label for="address" class="join-label">Server address</label>
+      <div class="address-row">
+        <input id="address" class="address" value="{{address}}" readonly spellcheck="false">
+        <button type="button" id="copy" class="button" aria-label="Copy the server address">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"/></svg>
+          <span class="button-text">Copy</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="wrap vitals" aria-label="Server vitals">
+    <div class="vital">
+      <h2>Online</h2>
+      <p class="figure"><span id="players-count">–</span><span class="unit" id="players-max"></span></p>
+      <ul id="players" class="players"></ul>
+    </div>
+    <div class="vital">
+      <h2>Ticks per second</h2>
+      <p class="figure"><span id="tps">–</span><span class="unit">/ 20</span></p>
+      <div class="ticks" id="ticks" role="img" aria-label="TPS not known yet"></div>
+      <p class="muted small" id="mspt"></p>
+    </div>
+    <div class="vital">
+      <h2>Last restart</h2>
+      <p class="figure figure-text" id="restart-ago">–</p>
+      <p class="muted small" id="restart-at"></p>
+    </div>
+  </section>
+
+  <section class="wrap mods" aria-labelledby="mods-heading">
+    <div class="mods-head">
+      <h2 id="mods-heading">Mods <span class="count" id="mod-count"></span></h2>
+      <p class="muted small" id="pack-line"></p>
+    </div>
+    <form class="filters" role="search" id="filters">
+      <div class="field grow">
+        <label for="q">Search</label>
+        <div class="search">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg>
+          <input id="q" type="search" placeholder="Name or jar, e.g. create connected" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <div class="field">
+        <label for="side">Side</label>
+        <select id="side">
+          <option value="">Any side</option>
+          <option value="both">Both</option>
+          <option value="client">Client only</option>
+          <option value="server">Server only</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="kind">Type</label>
+        <select id="kind">
+          <option value="">Everything</option>
+          <option value="mod">Mods</option>
+          <option value="resource pack">Resource packs</option>
+          <option value="shader pack">Shader packs</option>
+          <option value="data pack">Data packs</option>
+        </select>
+      </div>
+    </form>
+    <p class="result-line muted small" id="result-line" aria-live="polite">Loading the pack…</p>
+    <div class="table-wrap">
+      <table class="mod-table">
+        <thead>
+          <tr><th scope="col">Name</th><th scope="col">Version</th><th scope="col">Side</th><th scope="col">Source</th><th scope="col">Added</th></tr>
+        </thead>
+        <tbody id="mod-rows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap foot muted small">
+  <p>Side says where a mod runs: <em>both</em> means every player needs it, <em>client</em> only your game, <em>server</em> only ours.</p>
+</footer>
+<noscript><p class="wrap">This page needs JavaScript to read the server's state. The address is {{address}}.</p></noscript>
+</body>
+</html>
