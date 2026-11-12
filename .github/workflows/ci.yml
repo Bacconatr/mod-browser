@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # The homelab's VM118 runner, like every private repo here: GitHub bills
+    # hosted minutes on a private repo, and a failed charge for them
+    # (2026-11-06) locked every run on the account. Same-repository PRs only.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64, homelab-ci]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python and git on the runner
+        run: python3 --version && git --version
+      - name: Byte-compile
+        run: python3 -m compileall -q mod_browser tests
+      - name: Tests (HTTP API with a fake Server port, and the RCON adapter)
+        run: python3 -m unittest discover -s tests -t . -v
+
+  # Guest 120 is Internet-facing: nothing in this repo may hold a credential.
+  # History is scanned in full on every run because a leak in any commit is permanent.
+  secrets:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64, homelab-ci]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz | tar -xz gitleaks
+          ./gitleaks detect --source . --redact --verbose
