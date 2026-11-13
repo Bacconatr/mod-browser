@@ -45,6 +45,8 @@ class FakeServer:
             if not self.tps_up:
                 raise ServerUnavailable("timed out")
             return TPS_REPLY
+        if command.startswith("say "):
+            return ""
         raise ValueError(command)
 
     def last_start(self) -> datetime | None:

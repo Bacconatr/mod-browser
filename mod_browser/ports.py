@@ -12,6 +12,7 @@ caller of the API sees.
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Protocol
 
 from .catalog import InstalledMod, Project, Version
@@ -70,3 +71,32 @@ class WhitelistPort(Protocol):
 
         There is deliberately no way to list the whitelist.
         """
+
+
+class BootResult:
+    """How a boot ended: `ok`, or why not (the first mod-sourced ERROR, a timeout, ...)."""
+
+    def __init__(self, ok: bool, reason: str = ""):
+        self.ok, self.reason = ok, reason
+
+
+class HostPort(Protocol):
+    """What the applier needs from the machine the server runs on. No adapter is built yet:
+    restarting the live container and booting a throwaway one needs a way to reach Docker that
+    this app deliberately does not have (no socket). See README, "The applier"."""
+
+    def test_boot(self, pack_dir: "Path", timeout: float) -> BootResult:
+        """Boot a throwaway container with the candidate pack against a COPY of the world.
+
+        ok means it reached Done with no new mod-sourced ERRORs against the live baseline.
+        Must return (not raise) after `timeout` seconds with ok=False.
+        """
+
+    def backup_world(self) -> str:
+        """Take a world backup now and return its id. Raises if it could not."""
+
+    def restart_live(self) -> None:
+        """Restart the live container (it pulls the pack from PACKWIZ_URL on start)."""
+
+    def wait_live_done(self, timeout: float) -> BootResult:
+        """Wait for the live server to reach Done after `restart_live`."""

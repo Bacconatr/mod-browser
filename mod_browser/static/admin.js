@@ -96,6 +96,15 @@ async function load() {
   }
 }
 
+$("restart-now").addEventListener("click", async () => {
+  try {
+    const data = await call("POST", "/admin/api/restart-now", {});
+    say(data.apply.detail || "Restart requested.");
+  } catch (error) {
+    say(error.message);
+  }
+});
+
 $("add").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {

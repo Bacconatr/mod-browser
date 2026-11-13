@@ -23,6 +23,7 @@ Admin listener (bound to loopback inside the container; nothing proxies it):
   GET  /admin-api/v1/requests?since=<seq>     every request changed since a poll
   POST /admin-api/v1/requests                 add as the owner
   POST /admin-api/v1/requests/<id>/<action>   approve | deny | override | remove | requeue
+  POST /admin-api/v1/restart-now              apply what is queued without waiting (still test-boots and backs up)
   PVE reaches it with `pct exec` + `docker exec`, so it needs no password and
   must never be published or proxied.
 
@@ -208,7 +209,8 @@ class App:
 
     def __init__(self, monitor: StatusMonitor, catalog: PackCatalog, name: str = "Tel Aviv",
                  browse: "Browse | None" = None, requests: "Requests | None" = None,
-                 admin_password: str | None = None):
+                 admin_password: str | None = None, applier: Any | None = None):
+        self.applier = applier
         self.monitor, self.catalog, self.name, self.browse = monitor, catalog, name, browse
         self.requests = requests if browse is not None else None
         # An unset or short password leaves /admin shut (404), never open.
@@ -237,7 +239,10 @@ class App:
         return 200, "text/html; charset=utf-8", self._page, {"Cache-Control": "no-cache"}
 
     def status(self, query: dict[str, list[str]]) -> Response:
-        return _json(self.monitor.snapshot())
+        snapshot = self.monitor.snapshot()
+        if self.applier is not None and self.applier.enabled:
+            snapshot = {**snapshot, "apply": self.applier.status()}
+        return _json(snapshot)
 
     def mods(self, query: dict[str, list[str]]) -> Response:
         def one(name: str) -> str:
@@ -383,6 +388,14 @@ class App:
             done = intake.requeue(request_id)
         return _json({"request": done.admin()})
 
+    def _restart_now(self, req: Req) -> Response:
+        self._same_origin(req)
+        if self.applier is None or not self.applier.enabled:
+            raise Refused(409, "The applier is switched off.")
+        if not self.requests.queue.queued():
+            raise Refused(409, "Nothing is queued.")
+        return _json({"apply": self.applier.request_restart_now()})
+
     def _password_ok(self, req: Req) -> bool:
         header = req.headers.get("Authorization") or ""
         if not header.startswith("Basic "):
@@ -423,6 +436,7 @@ class App:
             ("GET", root, guard(answer(self._owner_list))),
             ("POST", root, guard(answer(self._owner_add))),
             ("POST", act, guard(answer(self._owner_act))),
+            ("POST", re.compile(r"^/admin/api/restart-now$"), guard(answer(self._restart_now))),
         ]
 
     @property
@@ -434,6 +448,7 @@ class App:
             ("GET", re.compile(r"^/admin-api/v1/requests$"), answer(self._owner_list)),
             ("POST", re.compile(r"^/admin-api/v1/requests$"), answer(self._owner_add)),
             ("POST", re.compile(rf"^/admin-api/v1/requests/{_ROUTE_ID}/({'|'.join(ADMIN_ACTIONS)})$"), answer(self._owner_act)),
+            ("POST", re.compile(r"^/admin-api/v1/restart-now$"), answer(self._restart_now)),
         ]
 
     @property

@@ -45,7 +45,8 @@ function renderStatus(status) {
   const band = document.querySelector(".band");
   band.dataset.state = state;
   $("state-label").textContent = STATES[state].label;
-  $("state-detail").textContent = STATES[state].detail;
+  const apply = status && status.apply && status.apply.phase !== "idle" ? status.apply.detail : "";
+  $("state-detail").textContent = [STATES[state].detail, apply].filter(Boolean).join(" ");
   $("checked").textContent = status && status.checkedAt ? `checked ${ago(status.checkedAt)}` : "";
   if (status && status.address) $("address").value = status.address;
 

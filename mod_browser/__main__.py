@@ -11,8 +11,10 @@ from pathlib import Path
 from .curseforge import CurseForgeCatalog
 from .modrinth import ModrinthCatalog
 from .net import CachingHttp, FetchHttp
+from .applier import Applier
 from .intake import Intake
 from .pack import PackCatalog
+from .packrepo import GitPackRepo
 from .queue import Queue
 from .whitelist import FileWhitelist
 from .rcon import RconServer
@@ -51,6 +53,17 @@ def requests_from_env(browse: Browse | None) -> Requests | None:
     return Requests(queue=queue, intake=Intake(queue, browse.resolve, FileWhitelist(whitelist)))
 
 
+def applier_from_env(requests: Requests | None, server) -> Applier | None:
+    """The applier is OFF unless MOD_BROWSER_APPLIER=1, and even then needs a host adapter, which
+    does not exist yet (restarting the live container and booting a throwaway one needs a way to
+    reach Docker that this app deliberately lacks). Until one is built, the switch only logs."""
+    if env("APPLIER", "0") != "1":
+        return None
+    logging.getLogger("mod_browser").error(
+        "MOD_BROWSER_APPLIER=1 but no host adapter exists yet: the applier stays off. See README, \"The applier\".")
+    return None
+
+
 def admin_password_from_env() -> str | None:
     path = Path(env("ADMIN_PASSWORD_FILE", "/run/secrets/aeronautics/admin"))
     return path.read_text().strip() if path.is_file() else None
@@ -72,8 +85,9 @@ def main() -> None:
                             max_age=float(env("STATUS_MAX_AGE", "10")))
     catalog = PackCatalog(Path(env("PACK_DIR", "/srv/pack")))
     browse = browse_from_env()
-    app = App(monitor, catalog, name=env("SERVER_NAME", "Tel Aviv"), browse=browse,
-              requests=requests_from_env(browse), admin_password=admin_password_from_env())
+    requests = requests_from_env(browse)
+    app = App(monitor, catalog, name=env("SERVER_NAME", "Tel Aviv"), browse=browse, requests=requests,
+              admin_password=admin_password_from_env(), applier=applier_from_env(requests, server))
     servers = Servers(
         app,
         public=(env("LISTEN_HOST", "0.0.0.0"), int(env("LISTEN_PORT", "8080"))),

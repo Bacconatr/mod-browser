@@ -95,10 +95,16 @@ class RconTest(unittest.TestCase):
             self.server(password_file=self.tmp / "absent").rcon("list")
 
     def test_anything_but_read_only_commands_is_refused_before_connecting(self):
-        for command in ("stop", "op Steve", "say hi", "list; stop"):
+        for command in ("stop", "op Steve", "list; stop", "say hi; stop", "say @a hi", "say hi\nstop", "sayhi",
+                        "say " + "a" * 201):
             with self.assertRaises(ValueError):
                 self.server().rcon(command)
         self.assertEqual(self.fake.seen, [])
+
+    def test_a_plain_say_for_the_restart_countdown_is_allowed(self):
+        self.fake.replies["say The server restarts in 5 minutes to add new mods."] = [""]
+        self.server().rcon("say The server restarts in 5 minutes to add new mods.")
+        self.assertEqual(self.fake.seen, ["say The server restarts in 5 minutes to add new mods."])
 
     def test_container_is_running_only_when_its_name_resolves_inside_the_network(self):
         self.assertTrue(self.server(host="localhost").container_running())

@@ -106,6 +106,49 @@ requests per name, 200 open in all, bodies of 8 KiB. The queue is SQLite in
 `MOD_BROWSER_DATA_DIR`; without that directory, the whitelist file or browsing,
 requests are off and `/queue` and `/admin` are 404.
 
+## The applier (off, and without a host adapter)
+
+`applier.py` turns `queued` requests into a pack change, a backup and a restart,
+and rolls back on a failed boot. The logic is built and tested at the HTTP API
+with a fake host and a real git pack, but **nothing runs it in production**:
+`MOD_BROWSER_APPLIER=1` is the switch, and the real **host adapter**
+(`HostPort` in `ports.py`: boot a throwaway container on a copy of the world,
+take a world backup, restart the live container, wait for Done) does not exist
+because this app has no Docker socket by design. Choosing how it reaches Docker
+(a socket proxy with one allowed container, a host-side helper the app calls,
+or PVE driving it through `pct exec`) is a Homelab decision for the owner.
+
+Each batch (everything `queued` when it starts), in order:
+
+1. **Stage**: one commit per request on a branch in a worktree beside the live
+   pack (`Requested-by:` trailer), `index.toml` and `pack.toml` hashes refreshed.
+2. **Test boot** on a copy of the world; ok means Done with no new mod-sourced
+   ERRORs. A failure, or a hang past the timeout, ends the batch as `test-failed`
+   with the reason: the live pack, world and server were never touched. Said once.
+3. **Countdown** (`say` over RCON: 5 min, 1 min, 10 s; 30 s for restart now)
+   if players are online.
+4. **Backup**. No backup, no restart (`test-failed`, live untouched).
+5. **Promote**: merge the branch into the live pack (one merge commit).
+6. **Restart** and wait for Done. On failure: revert the merge, restart again,
+   `rolled-back` with the reason. If that boot fails too the applier **halts**
+   and the status page says why; it does nothing more until the process restarts.
+
+**When:** as soon as the server is empty (or its container is stopped); else in
+the nightly window 05:00 to 06:00 `America/New_York`; **restart now** (admin)
+skips the wait only. A booting server (container up, RCON silent) is waited for.
+Requests in `testing` or `applying` cannot be denied, overridden or removed.
+
+States added: `testing -> applying -> applied`, or `test-failed` / `rolled-back`.
+`/api/status` gains `apply: {phase, detail, since, nextAt, halted}` while the
+applier is on: queued, test-booting, countdown, backing-up, restarting, online,
+failed, rolling-back, halted.
+
+Known limits: a failed batch fails every request in it (no bisecting for the
+culprit; the owner re-adds them one at a time with `add directly`); requests in
+one batch are resolved against the pack individually, so two that conflict with
+each other are caught by the test boot, not before; a manual "roll back" of an
+already-applied batch is not built.
+
 ## Configuration (environment)
 
 | Variable | Default |
@@ -120,6 +163,7 @@ requests are off and `/queue` and `/admin` are 404.
 | `MOD_BROWSER_SERVER_NAME`, `_SERVER_ADDRESS` | `Tel Aviv`, `play.example.com` |
 | `MOD_BROWSER_STATUS_MAX_AGE` | `10` (seconds) |
 | `MOD_BROWSER_TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` (whose `X-Forwarded-For` is believed) |
+| `MOD_BROWSER_APPLIER` | `0` (see "The applier"; no host adapter exists yet) |
 | `MOD_BROWSER_DATA_DIR` | `/srv/data` (writable; holds `requests.db`) |
 | `MOD_BROWSER_WHITELIST_FILE` | `/srv/whitelist.json` (read-only) |
 | `MOD_BROWSER_ADMIN_PASSWORD_FILE` | `/run/secrets/aeronautics/admin` |
