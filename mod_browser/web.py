@@ -23,7 +23,8 @@ Admin listener (bound to loopback inside the container; nothing proxies it):
   GET  /admin-api/v1/health
   GET  /admin-api/v1/requests?since=<seq>     every request changed since a poll
   POST /admin-api/v1/requests                 add as the owner
-  POST /admin-api/v1/requests/<id>/<action>   approve | deny | override | remove | requeue
+  POST /admin-api/v1/requests/<id>/<action>   approve | deny | override | remove | requeue; approve and deny
+                                              take an optional {"fingerprint"} and answer 409 if the request changed
   POST /admin-api/v1/apply {mode}             the owner asks to apply what is queued: when-empty | now
   POST /admin-api/v1/apply/cancel             withdraw that ask
   GET  /admin-api/v1/maintenance              the maintenance runner's poll: asked for? queued? halted?
@@ -74,7 +75,7 @@ from .limits import KeyedLimiter
 from .pack import PackCatalog, search
 from .prism import PackFiles, instance_zip
 from .ports import CatalogPort, InstalledPort, JarPort
-from .queue import InvalidTransition, NoSuchRequest, Queue
+from .queue import InvalidTransition, NoSuchRequest, Queue, fingerprint
 from .resolver import Busy, NotFound, Verdict, resolve
 from .status import StatusMonitor
 
@@ -94,6 +95,7 @@ SOCKET_TIMEOUT = 15
 # A request body is a small JSON object: a name, a mod id, a version id, a reason.
 MAX_BODY = 8 * 1024
 _ROUTE_ID = r"(\d{1,9})"
+_FINGERPRINT = re.compile(r"^[0-9a-f]{64}$")
 ADMIN_ACTIONS = ("approve", "deny", "override", "remove", "requeue")
 
 SECURITY_HEADERS = {
@@ -238,6 +240,7 @@ class App:
                  upstream: Any | None = None):
         self.applier = applier
         self.upstream = upstream
+        self._owner_lock = threading.Lock()
         self.setup = setup
         self._zip: tuple[Any, bytes] | None = None
         self.monitor, self.catalog, self.name, self.browse = monitor, catalog, name, browse
@@ -408,6 +411,19 @@ class App:
         self._same_origin(req)
         request_id, action = int(req.match.group(1)), req.match.group(2)
         intake, body = self.requests.intake, req.json()
+        expected = body.get("fingerprint")
+        if expected is not None and (action not in ("approve", "deny") or not isinstance(expected, str)
+                                     or not _FINGERPRINT.match(expected)):
+            raise Refused(400, "fingerprint is 64 lowercase hex characters, and only for approve or deny")
+        # Owner actions are serialized, so nothing an owner can do (an override from /admin) changes the
+        # request between this check and the approval it guards.
+        with self._owner_lock:
+            if expected is not None and fingerprint(self.requests.queue.get(request_id).admin()) != expected:
+                raise Refused(409, "The request changed since it was checked; look at it again.",
+                              {"fingerprint": self.requests.queue.get(request_id).admin()["fingerprint"]})
+            return self._owner_do(request_id, action, intake, body)
+
+    def _owner_do(self, request_id: int, action: str, intake: Intake, body: dict[str, Any]) -> Response:
         if action == "approve":
             done = intake.approve(request_id)
         elif action == "deny":

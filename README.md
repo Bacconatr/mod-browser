@@ -95,6 +95,12 @@ or queued request with a fixed reason.
 | `GET /admin-api/v1/requests?since=<seq>`, `POST /admin-api/v1/requests[/<id>/<action>]` | PVE, on the loopback listener only; no password, because only `docker exec` reaches it |
 
 Actions: `approve`, `deny {reason}`, `override {version}`, `remove`, `requeue`.
+`approve` and `deny` also take an optional `fingerprint`: the sha256 that
+`/admin-api/v1/requests` serves with each entry (`fingerprint` in `queue.py`:
+requester, ownerAdded, mod, dependencies, versionId, added, kind; sorted, compact
+JSON), computed the same way as Homelab's `pve-mod-queue.py` (#1759). If the
+request no longer has it, the answer is 409 with the current one and nothing
+changes, so PVE never approves a request that changed after it posted it.
 `since` returns every request changed after that `seq`, so a poller never
 misses a change; the answer's `seq` is the next `since`.
 

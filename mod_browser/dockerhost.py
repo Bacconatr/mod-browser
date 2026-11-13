@@ -277,15 +277,35 @@ class DockerHost:
     def _tar(self, args: list[str], timeout: float = 3600) -> None:
         self._cmd(["tar", *args], timeout=timeout)
 
+    def _tar_create(self, args: list[str]) -> None:
+        """GNU tar exits 1 when a file's ctime moved while it was read. The server is stopped, so that is
+        a file system settling the server's last writes (seen on the Mac's file sharing in the dry run,
+        2026-11-13): try again after a pause. `--compare` afterwards is what decides."""
+        for attempt in range(3):
+            done = self._cmd(["tar", *args], timeout=3600, check=False)
+            if done.returncode == 0:
+                return
+            if done.returncode != 1 or "file changed as we read it" not in done.stderr or attempt == 2:
+                raise HostError(f"tar --create exited {done.returncode}: {done.stderr.strip()[-300:]}")
+            self._sleep(10)
+
     def backup(self, dest: Path) -> dict:
         if dest.exists():
             shutil.rmtree(dest)
         dest.mkdir(parents=True)
+        try:
+            return self._backup(dest)
+        except BaseException:
+            shutil.rmtree(dest, ignore_errors=True)  # half a backup is not one: never left to look like it
+            raise
+
+    def _backup(self, dest: Path) -> dict:
         excludes = [f"--exclude={e}" for e in WORLD_EXCLUDES]
         world_tar, files_tar = dest / "world.tar.gz", dest / "server-files.tar.gz"
         members = [m for m in SERVER_FILES if (self.data_dir / m).exists()]
-        self._tar(["--create", "--gzip", "--file", str(world_tar), *excludes, "-C", str(self.data_dir), "world"])
-        self._tar(["--create", "--gzip", "--file", str(files_tar), "-C", str(self.data_dir), *members])
+        self._cmd(["sync"], timeout=300, check=False)
+        self._tar_create(["--create", "--gzip", "--file", str(world_tar), *excludes, "-C", str(self.data_dir), "world"])
+        self._tar_create(["--create", "--gzip", "--file", str(files_tar), "-C", str(self.data_dir), *members])
         # Verified against the disk it came from: the server is stopped, so any difference is a bad copy.
         self._tar(["--compare", "--gzip", "--file", str(world_tar), "-C", str(self.data_dir)])
         self._tar(["--compare", "--gzip", "--file", str(files_tar), "-C", str(self.data_dir)])

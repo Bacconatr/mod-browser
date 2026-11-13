@@ -15,6 +15,7 @@ is data about a request, not a promise: the intake re-resolves on approval.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -83,8 +84,22 @@ class Request:
         }
 
     def admin(self) -> dict[str, Any]:
-        return {**self.public(), "seq": self.seq, "note": self.note, "versionId": self.version_id,
-                "added": self.added, "batch": self.batch, "kind": self.kind, "meta": self.meta}
+        entry = {**self.public(), "seq": self.seq, "note": self.note, "versionId": self.version_id,
+                 "added": self.added, "batch": self.batch, "kind": self.kind, "meta": self.meta}
+        return {**entry, "fingerprint": fingerprint(entry)}
+
+
+#: What an approval or denial is about. Homelab's pve-mod-queue.py (#1759) hashes the same fields of the
+#: same feed entry, so it can say "approve THIS request" and the site refuses if it changed since.
+FINGERPRINT_FIELDS = ("requester", "ownerAdded", "mod", "dependencies", "versionId", "added", "kind")
+
+
+def fingerprint(entry: dict[str, Any]) -> str:
+    """sha256 of the untruncated fields in FINGERPRINT_FIELDS of an admin feed entry, byte for byte the
+    way PVE computes it: sorted keys, compact separators, non-ASCII kept, UTF-8."""
+    decided = {k: entry.get(k) for k in FINGERPRINT_FIELDS}
+    blob = json.dumps(decided, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    return hashlib.sha256(blob.encode("utf-8", "replace")).hexdigest()
 
 
 _SCHEMA = """
