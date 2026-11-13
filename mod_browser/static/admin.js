@@ -123,6 +123,8 @@ $("restart-now").addEventListener("click", async () => {
   } catch (error) {
     say(error.message);
   }
+});
+
 $("upstream-check").addEventListener("click", async () => {
   try {
     const { upstream } = await call("POST", "/admin/api/upstream/check", {});
