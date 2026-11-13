@@ -325,7 +325,7 @@ class RedirectHeaderTest(unittest.TestCase):
                 self.status, self.location, self.reads = status, location, 0
             def getheader(self, name):
                 return self.location if name == "Location" else None
-            def read(self, _size):
+            def read1(self, _size):
                 self.reads += 1
                 return b"{}" if self.status == 200 and self.reads == 1 else b""
 
