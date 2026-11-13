@@ -128,6 +128,31 @@ class FetchTest(unittest.TestCase):
             local(10_000, timeout=0.5).fetch_jar(self.serve(Drip) + "/slow")
         self.assertLess(time.monotonic() - started, 3)
 
+    def test_a_post_sends_json_and_never_follows_a_redirect(self):
+        seen = []
+
+        class H(BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen.append((self.path, self.headers.get("Content-Type"), self.rfile.read(int(self.headers["Content-Length"]))))
+                if self.path == "/redirect":
+                    self.send_response(302)
+                    self.send_header("Location", "http://localhost:1/steal")
+                    self.end_headers()
+                    return
+                body = b'{"data": [1]}'
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            log_message = lambda *a: None  # noqa: E731
+        base = self.serve(H)
+        self.assertEqual(local().post_json(base + "/mods", {"modIds": [1]}, {"x-api-key": "k"}), {"data": [1]})
+        self.assertEqual(seen[0], ("/mods", "application/json", b'{"modIds": [1]}'))
+        with self.assertRaisesRegex(FetchError, "answered 302"):
+            local().post_json(base + "/redirect", {})
+        with self.assertRaisesRegex(FetchError, "refusing to fetch example.com"):
+            FetchHttp().post_json("https://example.com/x", {})
+
     def test_a_non_200_answer_is_an_error(self):
         class H(BaseHTTPRequestHandler):
             def do_GET(self):

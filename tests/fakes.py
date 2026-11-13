@@ -156,7 +156,7 @@ NOTES = textwrap.dedent("""\
 
     ## Distribution-blocked mods
 
-    Mentions `mods/create-connected.pw.toml` again, outside the extras section.
+    The authors of these forbid hosting outside CurseForge: `mods/create-connected.pw.toml`.
     """)
 
 LATER_MOD = textwrap.dedent("""\

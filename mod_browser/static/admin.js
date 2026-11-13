@@ -60,21 +60,41 @@ async function versionPicker(r, holder) {
   }
 }
 
+function diffList(title, items, describe) {
+  if (!items.length) return null;
+  const list = el("ul", { class: "added" });
+  for (const item of items) list.append(el("li", { text: describe(item) }));
+  return el("details", {}, [el("summary", { text: `${title} (${items.length})` }), list]);
+}
+
+function upstreamDetails(r) {
+  const d = (r.meta && r.meta.diff) || { added: [], removed: [], changed: [], kept: [] };
+  return el("div", { class: "meta-block" }, [
+    el("div", { class: "meta" }, [el("span", { text: "Upstream release; applied as a whole, through the same test boot and backup." })]),
+    diffList("Added", d.added, (m) => `${m.name} ${m.version}`),
+    diffList("Changed", d.changed, (m) => `${m.name}: ${m.from} to ${m.to}`),
+    diffList("Removed", d.removed, (m) => `${m.name} ${m.version}`),
+    diffList("Kept (your pin stays)", d.kept, (m) => `${m.name}: pack has ${m.pack}, upstream has ${m.upstream}`),
+  ]);
+}
+
 function row(r) {
   const open = r.state !== "denied";
+  const upstream = r.kind === "upstream";
   const holder = el("div", { class: "actions" });
   const reason = el("input", { type: "search", placeholder: "Reason for denying", "aria-label": "Reason for denying", maxlength: "300" });
   if (r.state === "pending") holder.append(button("Approve", () => act(r.id, "approve")));
   if (r.state === "approved") holder.append(button("Try queueing again", () => act(r.id, "requeue")));
   if (open) {
-    holder.append(button("Change version", () => versionPicker(r, picker)));
+    if (!upstream) holder.append(button("Change version", () => versionPicker(r, picker)));
     holder.append(reason, button("Deny", () => act(r.id, "deny", { reason: reason.value })));
   }
   if (r.state === "approved" || r.state === "queued") holder.append(button("Remove from queue", () => act(r.id, "remove")));
   const picker = el("div", { class: "actions" });
   const deps = r.dependencies.length ? el("div", { class: "meta" }, [el("span", { text: `with ${r.dependencies.join(", ")}` })]) : null;
   return el("li", { class: "found" }, [el("div", {}, [
-    el("strong", { text: `${r.mod.name} ${r.mod.versionNumber}` }),
+    el("strong", { text: upstream ? r.mod.name : `${r.mod.name} ${r.mod.versionNumber}` }),
+    upstream ? upstreamDetails(r) : null,
     el("div", { class: "meta" }, [el("span", { text: r.state }), el("span", { text: `asked by ${r.requester}` }), el("span", { text: r.mod.source })]),
     deps,
     r.reason ? el("div", { class: "meta" }, [el("span", { text: r.reason })]) : null,
@@ -103,6 +123,14 @@ $("restart-now").addEventListener("click", async () => {
   } catch (error) {
     say(error.message);
   }
+$("upstream-check").addEventListener("click", async () => {
+  try {
+    const { upstream } = await call("POST", "/admin/api/upstream/check", {});
+    say(upstream.error ? `Upstream check failed: ${upstream.error}` : `Upstream check: ${upstream.lastResult}.`);
+  } catch (error) {
+    say(error.message);
+  }
+  load();
 });
 
 $("add").addEventListener("submit", async (event) => {

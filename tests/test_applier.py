@@ -304,3 +304,72 @@ class MetafileTest(ApplierCase):
         self.assertEqual(curse["download"]["mode"], "metadata:curseforge")
         self.assertEqual(curse["update"]["curseforge"], {"file-id": 8777573, "project-id": 947914})
         self.assertEqual(curse["side"], "client")
+
+
+class UpstreamApplyTest(ApplierCase):
+    """An approved upstream update is written into the pack by the same applier: add, change, remove, pins kept."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from datetime import datetime as dt
+        from mod_browser.upstream import Release, UpstreamChecker, UpstreamMod, version_of
+        pack = self.dir / "pack"
+        (pack / "mods" / "old-base-mod.pw.toml").write_text(
+            'name = "Old Base Mod"\nfilename = "oldbase-2.0.jar"\nside = "both"\n\n[download]\nhash-format = "sha1"\nhash = "11"\n'
+            'mode = "metadata:curseforge"\n\n[update]\n[update.curseforge]\nfile-id = 555001\nproject-id = 5555\n')
+        self.git("add", "-A")
+        subprocess.run(["git", "-C", str(pack), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--amend", "--no-edit"], check=True)
+
+        def mod(project, file, name, filename):
+            return UpstreamMod(project, file, name, filename, version_of(filename), "aa", "sha1")
+        release = Release("9400000", "All of Create - Aeronautics v2.10", "2.10", "2026-11-20T10:00:00Z", (
+            mod("947914", "8777574", "Create: Connected", "create_connected-1.3.4-mc1.21.1.jar"),
+            mod("999111", "7", "Create Deep Seas", "create_submarine-3.3.0.jar"),
+            mod("4242", "11", "Straw Statues", "strawstatues-1.0.jar")))
+        self.checker = UpstreamChecker(self.queue, type("S", (), {"latest": lambda _self: release})(), self.app.catalog,
+                                       now=lambda: dt(2026, 11, 20, 4, 5, tzinfo=EST))
+        self.checker.check()
+
+    def upstream_id(self) -> int:
+        return self.queue.of_kind("upstream")[0].id
+
+    def test_the_update_is_written_into_the_pack_added_changed_removed_and_the_pin_left_alone(self):
+        rid = self.upstream_id()
+        self.assertEqual(self.act(rid, "approve")[1]["request"]["state"], "queued")
+        self.applier.tick()
+        self.assertEqual(self.queue.get(rid).state, "applied")
+        files = self.git("ls-files", "mods").split()
+        self.assertIn("mods/straw-statues.pw.toml", files)                  # added
+        self.assertNotIn("mods/old-base-mod.pw.toml", files)               # removed
+        self.assertIn("mods/create-deep-seas.pw.toml", files)              # the pin
+        changed = tomllib.loads((self.dir / "pack" / "mods" / "create-connected.pw.toml").read_text())
+        self.assertEqual(changed["filename"], "create_connected-1.3.4-mc1.21.1.jar")
+        self.assertEqual(changed["update"]["curseforge"]["file-id"], 8777574)
+        self.assertEqual(tomllib.loads((self.dir / "pack" / "mods" / "create-deep-seas.pw.toml").read_text())["filename"],
+                         "create_submarine-3.4.5.jar")                      # still 3.4.5, not upstream's 3.3.0
+        index = tomllib.loads((self.dir / "pack" / "index.toml").read_text())
+        listed = {f["file"] for f in index["files"]}
+        self.assertIn("mods/straw-statues.pw.toml", listed)
+        self.assertNotIn("mods/old-base-mod.pw.toml", listed)               # a deleted metafile leaves the index
+        self.assertEqual(self.host.calls, ["test_boot", "backup", "restart", "wait_done"])
+        self.assertIn("Update to Upstream update", self.git("log", "--no-merges", "--topo-order", "-1", "--format=%s"))
+
+    def test_a_failed_live_boot_puts_the_old_base_pack_back(self):
+        rid = self.upstream_id()
+        self.act(rid, "approve")
+        before = self.git("ls-files", "-s", "mods")
+        self.host.live_results = [BootResult(False, "crash"), BootResult(True)]
+        self.applier.tick()
+        self.assertEqual(self.queue.get(rid).state, "rolled-back")
+        self.assertEqual(self.git("ls-files", "-s", "mods"), before)
+
+    def test_it_is_applied_on_its_own_and_a_friends_request_waits_for_the_next_batch(self):
+        (friend,) = self.queued(PONDER)
+        rid = self.upstream_id()
+        self.act(rid, "approve")
+        self.applier.tick()
+        self.assertEqual((self.queue.get(rid).state, self.state_of(friend)), ("applied", "queued"))
+        self.assertEqual(self.host.calls.count("test_boot"), 1)
+        self.applier.tick()                                                 # the next batch: just the friend's
+        self.assertEqual(self.state_of(friend), "applied")
+        self.assertEqual(self.host.calls.count("test_boot"), 2)

@@ -39,8 +39,8 @@ def snapshot_of(verdict: Verdict) -> dict[str, Any]:
 
 class Intake:
     def __init__(self, queue: Queue, resolve: Callable[[str, str, str | None], Verdict], whitelist: Any,
-                 limiter: RateLimiter | None = None):
-        self.queue, self._resolve, self.whitelist = queue, resolve, whitelist
+                 limiter: RateLimiter | None = None, pack_head: Callable[[], str] | None = None):
+        self.queue, self._resolve, self.whitelist, self._pack_head = queue, resolve, whitelist, pack_head
         self.limiter = limiter or RateLimiter(30, 60.0)
         # Wrong names are counted per client: the name check must not become a way to probe the
         # whitelist, and one prober must not be able to lock the friends out.
@@ -97,6 +97,8 @@ class Intake:
 
     def _try_queue(self, request_id: int) -> Request:
         current = self.queue.get(request_id)
+        if current.kind == "upstream":
+            return self._try_queue_upstream(current)
         try:
             verdict = self._resolve(current.source, current.project_id, current.version_id)
         except Exception as exc:  # noqa: BLE001 - an outage must not lose the approval
@@ -108,6 +110,15 @@ class Intake:
             return self.queue.hold(request_id, reasons)
         self.queue.override(request_id, snapshot_of(verdict))  # refresh the dependency set
         return self.queue.queue(request_id)
+
+    def _try_queue_upstream(self, current: Request) -> Request:
+        """An upstream update was computed against one commit of the pack; if the pack has moved since, the
+        difference may be wrong (a mod added since, a pin changed), so it is held for the next daily check."""
+        base = (current.meta or {}).get("baseCommit")
+        if self._pack_head is not None and base != self._pack_head():
+            return self.queue.hold(current.id, "The pack changed after this difference was computed. The next daily "
+                                               "check replaces it with a fresh one; deny this one or wait.")
+        return self.queue.queue(current.id)
 
     def deny(self, request_id: int, reason: str) -> Request:
         reason = (reason or "").strip()[:300]
@@ -122,6 +133,8 @@ class Intake:
 
     def override(self, request_id: int, version_id: str) -> Request:
         current = self.queue.get(request_id)
+        if current.kind == "upstream":
+            raise Refused(409, "An upstream update is taken or left as a whole; there is no other version to pick.")
         if current.state not in OPEN_STATES:
             raise Refused(409, f"A {current.state} request cannot change version.")
         verdict = self._resolve(current.source, current.project_id, version_id)

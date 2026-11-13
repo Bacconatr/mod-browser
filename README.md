@@ -143,11 +143,72 @@ States added: `testing -> applying -> applied`, or `test-failed` / `rolled-back`
 applier is on: queued, test-booting, countdown, backing-up, restarting, online,
 failed, rolling-back, halted.
 
+**Upstream updates** (`kind = "upstream"`, see "Upstream releases") carry `add`, `change` and `remove` entries; `change` and `remove` act on the metafile they name (and nothing outside `mods/`), a removed metafile leaves `index.toml`, and an upstream update is applied **on its own**: a friend's request computed against the old pack waits for the next batch.
+
 Known limits: a failed batch fails every request in it (no bisecting for the
 culprit; the owner re-adds them one at a time with `add directly`); requests in
 one batch are resolved against the pack individually, so two that conflict with
 each other are caught by the test boot, not before; a manual "roll back" of an
 already-applied batch is not built.
+## Setting up the game: the Prism instance (`/setup`)
+
+`/prism/instance.zip` is a Prism Launcher instance built on request from the
+pack's own `pack.toml`: Minecraft and NeoForge components, a memory setting,
+`packwiz-installer-bootstrap.jar` in `.minecraft/`, and the pre-launch command
+`"$INST_JAVA" -jar packwiz-installer-bootstrap.jar -s client <pack.toml URL>`.
+On every launch packwiz-installer makes the mods folder match the pack, adding,
+updating and removing; `-s client` skips mods whose metafile says `side =
+"server"`. `/setup` has the five steps, the server address, the base-pack mods
+that must be downloaded by hand (the metafiles NOTES.md lists under a
+"Distribution-blocked mods" heading), and "when did you last play?" against
+`/api/pack/changes?since=YYYY-MM-DD`.
+
+The launcher reads the pack from **`/pack/<file>`**: only `pack.toml`,
+`index.toml` and the files `index.toml` lists, found through the index so
+nothing else in the directory (NOTES.md, `.git`) is reachable. **Anything the
+index lists is public: never put a secret in the pack.**
+
+The bootstrap jar is not in this repository. The deploy must put a pinned
+copy on disk (`MOD_BROWSER_BOOTSTRAP_JAR`); without it `/prism/instance.zip` is
+a 404 and `/setup` says the instance is not published yet.
+
+## Upstream releases (`upstream.py`)
+
+Once a day (first tick after 04:00 `America/New_York`) the app reads the newest
+**release** of CurseForge project 1518930 (the modpack), downloads its
+`manifest.json`, looks every mod up (`POST /v1/mods/files`, `/v1/mods`, which
+work for our key even though search does not) and compares it with the pack.
+A release not seen before becomes one **owner-only** request (`kind =
+"upstream"`, requester `Upstream`), shown on `/admin` with Added, Changed,
+Removed and Kept lists. It is not on the public queue, and it does nothing
+until the owner approves it; approving only queues it, and the applier takes it
+through the same test boot, backup and rollback as anything else. A release
+that changes nothing files nothing; one nobody decided on is denied as
+"replaced" when a newer one arrives; a denied release is not asked again.
+
+**What is kept.** A mod the pack holds as an extra, or that was added later, is
+never changed or removed: Deep Seas 3.4.5 stays against a bundled 3.3.0
+(`kept`, with `upstreamNewer` set when upstream is the newer one). Only base-pack
+CurseForge mods are changed or removed. A pack mod is matched to an upstream mod
+by CurseForge project id, then by its jar's name without the version, because
+the owner's pins are often Modrinth files known upstream under another id.
+
+**Stale differences.** The request records the pack commit it was computed
+against; if the pack has moved when the owner approves, it is held `approved`
+with a note until the next daily check files a fresh one.
+
+**A CurseForge outage** is logged once a day at most (kept in the queue's
+database, so a restart does not repeat it); `GET /admin-api/v1/upstream` shows
+the last result and error, and `POST .../upstream/check` (or the button on
+`/admin`) checks now.
+
+Pack operations: the request's `added` holds `{op: add | change | remove, ...}`
+entries with what a metafile needs (`change` and `remove` name the pack metafile
+they act on, and `change` keeps its side). Writing
+them into the pack is the applier's job ("The applier"); until that is on, an
+approved upstream update just sits `queued`. Added mods come in
+with `side = "both"` because CurseForge's manifest does not say; the test boot
+is what catches a client-only mod loaded on the server.
 
 ## Configuration (environment)
 
@@ -164,6 +225,9 @@ already-applied batch is not built.
 | `MOD_BROWSER_STATUS_MAX_AGE` | `10` (seconds) |
 | `MOD_BROWSER_TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` (whose `X-Forwarded-For` is believed) |
 | `MOD_BROWSER_APPLIER` | `0` (see "The applier"; no host adapter exists yet) |
+| `MOD_BROWSER_PUBLIC_URL` | `https://mods.example.com` (the pack URL in the instance is `<this>/pack/pack.toml`) |
+| `MOD_BROWSER_BOOTSTRAP_JAR` | `/srv/prism/packwiz-installer-bootstrap.jar` |
+| `MOD_BROWSER_PRISM_MIN_MB` / `_MAX_MB` | `2048` / `6144` |
 | `MOD_BROWSER_DATA_DIR` | `/srv/data` (writable; holds `requests.db`) |
 | `MOD_BROWSER_WHITELIST_FILE` | `/srv/whitelist.json` (read-only) |
 | `MOD_BROWSER_ADMIN_PASSWORD_FILE` | `/run/secrets/aeronautics/admin` |

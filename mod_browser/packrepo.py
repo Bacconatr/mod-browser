@@ -109,7 +109,8 @@ class GitPackRepo:
                 self._refresh(path)
                 self._git("add", "-A", cwd=path)
                 names = ", ".join(a["name"] for a in request.added)
-                body = f"Add {request.mod_name}\n\nRequested-by: {request.requester}\nRequest: {request.id}\nWith: {names}\n"
+                verb = "Update to" if getattr(request, "kind", "mod") == "upstream" else "Add"
+                body = f"{verb} {request.mod_name}\n\nRequested-by: {request.requester}\nRequest: {request.id}\nWith: {names}\n"
                 if not changed:
                     raise StageError(f"request {request.id} changed nothing")
                 self._git("commit", "-q", "-m", body, cwd=path)
@@ -119,10 +120,25 @@ class GitPackRepo:
         return Staged(batch, branch, path)
 
     def _write(self, tree: Path, added: list[dict[str, Any]]) -> bool:
+        """Apply a request's entries to the tree. An entry is `add` (the default), or, for an upstream
+        update, `change` or `remove` of the metafile it names."""
         existing = self._existing(tree)
         taken = {p.name for p in (tree / _FOLDER).glob("*.pw.toml")}
         wrote = False
         for mod in added:
+            op = mod.get("op", "add")
+            if op in ("change", "remove"):
+                target = (tree / str(mod.get("metafile") or "")).resolve()
+                if tree.resolve() not in target.parents or target.parent != (tree / _FOLDER).resolve() or not target.is_file():
+                    raise StageError(f"{mod['name']}: the pack has no metafile {mod.get('metafile')!r} to {op}.")
+                if op == "remove":
+                    target.unlink()
+                else:
+                    target.write_text(metafile_text(mod))
+                wrote = True
+                continue
+            if op != "add":
+                raise StageError(f"unknown operation {op!r} for {mod['name']}")
             known = existing.get((mod["source"], str(mod["projectId"])))
             if known is not None and not mod.get("replaces"):
                 raise StageError(f"{mod['name']} is already tracked by the pack as {known.name}.")
@@ -152,7 +168,8 @@ class GitPackRepo:
         old = tomllib.loads(index_path.read_text())
         if old.get("hash-format", "sha256") != "sha256" or pack.get("index", {}).get("hash-format", "sha256") != "sha256":
             raise StageError("the pack's index does not use sha256; refusing to rewrite it")
-        entries = {f["file"]: f for f in old.get("files", [])}
+        # A file the batch deleted leaves the index; one still on disk keeps its entry.
+        entries = {f["file"]: f for f in old.get("files", []) if (tree / f["file"]).exists()}
         for meta in (tree / _FOLDER).glob("*.pw.toml"):
             rel = meta.relative_to(tree).as_posix()
             entries.setdefault(rel, {"file": rel, "metafile": True})

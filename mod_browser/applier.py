@@ -142,6 +142,10 @@ class Applier:
 
     # ---- one batch ----
     def _run_batch(self, queued: list[Request], mode: str) -> None:
+        # An upstream update is applied on its own: it rewrites the base pack, and a friend's request
+        # computed against the old pack must not ride along. The others wait for the next batch.
+        upstream = [r for r in queued if r.kind == "upstream"]
+        queued = upstream[:1] or queued
         ids = [r.id for r in queued]
         batch = self.queue.next_batch_id()
         self.queue.advance(ids, ("queued",), "testing", batch=batch)
