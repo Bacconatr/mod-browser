@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Requests · {{name}}</title>
+<meta name="description" content="The mods friends have asked for on {{name}}, who asked, and where each one stands.">
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23d6a93f'/%3E%3C/svg%3E">
+<script src="/static/queue.js" defer></script>
+</head>
+<body>
+<header class="band" data-state="unknown">
+  <div class="wrap">
+    <h1><a href="/">{{name}}</a></h1>
+    <p class="detail">Mod requests. <a href="/add">Ask for a mod</a>.</p>
+  </div>
+</header>
+<main class="wrap find">
+  <p id="result-line" class="muted small" aria-live="polite">Loading the queue…</p>
+  <div class="table-wrap">
+    <table class="mod-table">
+      <thead><tr><th scope="col">Mod</th><th scope="col">Asked by</th><th scope="col">State</th><th scope="col">Asked</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <p class="muted small">Pending: waiting for the owner. Approved: the owner said yes, not queued yet. Queued: will be applied at the next restart. Denied: not coming, with the reason.</p>
+</main>
+<noscript><p class="wrap">This page needs JavaScript.</p></noscript>
+</body>
+</html>

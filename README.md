@@ -72,17 +72,37 @@ docs/design-brief.md   the page's design contract (Impeccable); not served
 
 ### Seams for the next tickets
 
-- **Request queue**: a `Queue` module and `POST/GET /api/requests` in
-  `App.public_routes`. Requests take only a whitelisted Minecraft name.
-- **Catalog port** (Modrinth + CurseForge search): a second Protocol in
-  `ports.py`, a real adapter beside `rcon.py`, a fake in `tests/fakes.py`.
-- **`/admin`**: on the public listener behind the vault password. Today it
-  is a 404 like any unknown path.
-- **Admin API**: `App.admin_routes`, on the second listener, bound to
-  127.0.0.1 inside the container and never published or proxied. PVE reaches
-  it with `pct exec 120 -- docker exec aeronautics-mod-browser ...`.
+- **Applier** (next ticket): reads `queue.all()` for `queued` requests and
+  moves them on (`testing`, `applying`, `applied`, `test-failed`,
+  `rolled-back`). The states and the record live in `queue.py`.
 - **`say` countdowns**: add the command to `ALLOWED_COMMANDS` with the
   ticket that needs it.
+
+## Requests, the queue and /admin
+
+Friends ask from `/add` (a name, checked against the server's `whitelist.json`
+and never listed back), see the queue at `/queue`, and the owner decides on
+`/admin`. States: `pending -> approved -> queued`, or `denied` (with a reason).
+Approval re-resolves the mod against the pack as it is now: if it still fits
+it is queued, otherwise it stays `approved` with a note (owner-only) saying
+why, and "try queueing again" retries. "Remove from queue" denies an approved
+or queued request with a fixed reason.
+
+| Route | Who |
+|---|---|
+| `GET /queue`, `GET /api/requests` | anyone |
+| `POST /api/requests` `{name, source, id, version}` | anyone with a whitelisted name; JSON only, same origin |
+| `GET /admin`, `/admin/api/requests[/<id>/<action>]` | the owner: HTTP Basic, any user name, the vault password (20+ chars; a shorter or missing one leaves `/admin` a 404). 10 wrong guesses a minute lock it for a minute |
+| `GET /admin-api/v1/requests?since=<seq>`, `POST /admin-api/v1/requests[/<id>/<action>]` | PVE, on the loopback listener only; no password, because only `docker exec` reaches it |
+
+Actions: `approve`, `deny {reason}`, `override {version}`, `remove`, `requeue`.
+`since` returns every request changed after that `seq`, so a poller never
+misses a change; the answer's `seq` is the next `since`.
+
+Limits: 30 asks a minute (everyone together), 20 wrong names a minute, 5 open
+requests per name, 200 open in all, bodies of 8 KiB. The queue is SQLite in
+`MOD_BROWSER_DATA_DIR`; without that directory, the whitelist file or browsing,
+requests are off and `/queue` and `/admin` are 404.
 
 ## Configuration (environment)
 
@@ -97,6 +117,9 @@ docs/design-brief.md   the page's design contract (Impeccable); not served
 | `MOD_BROWSER_PACK_DIR` | `/srv/pack` |
 | `MOD_BROWSER_SERVER_NAME`, `_SERVER_ADDRESS` | `Tel Aviv`, `play.example.com` |
 | `MOD_BROWSER_STATUS_MAX_AGE` | `10` (seconds) |
+| `MOD_BROWSER_DATA_DIR` | `/srv/data` (writable; holds `requests.db`) |
+| `MOD_BROWSER_WHITELIST_FILE` | `/srv/whitelist.json` (read-only) |
+| `MOD_BROWSER_ADMIN_PASSWORD_FILE` | `/run/secrets/aeronautics/admin` |
 
 ## Develop
 

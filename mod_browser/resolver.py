@@ -33,6 +33,10 @@ class NotFound(Exception):
     pass
 
 
+class Busy(Exception):
+    """Too many resolves are already running; ask again in a moment."""
+
+
 @dataclass
 class AddedMod:
     name: str
