@@ -44,7 +44,7 @@ class Intake:
         self.limiter = limiter or RateLimiter(30, 60.0)
         # Wrong names are counted per client: the name check must not become a way to probe the
         # whitelist, and one prober must not be able to lock the friends out.
-        self.guesses = KeyedLimiter(20, 60.0)
+        self.guesses = KeyedLimiter(20, 60.0, ceiling=200)
 
     # ---- friends ----
     def submit(self, name: str, source: str, project_id: str, version_id: str | None, client: str = "") -> Request:

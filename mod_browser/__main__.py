@@ -18,7 +18,7 @@ from .whitelist import FileWhitelist
 from .rcon import RconServer
 from .status import StatusMonitor
 from .sources import CompositeCatalog, DirInstalled, HttpJars
-from .web import App, Browse, Requests, Servers
+from .web import App, Browse, Requests, Servers, set_trusted_proxies
 
 
 def env(name: str, default: str) -> str:
@@ -57,6 +57,8 @@ def admin_password_from_env() -> str | None:
 
 
 def main() -> None:
+    # Caddy runs inside the container and reaches this app over loopback.
+    set_trusted_proxies(env("TRUSTED_PROXIES", "127.0.0.1/32,::1/128").split(","))
     logging.basicConfig(level=logging.INFO, format="mod-browser: %(levelname)s %(message)s")
     server = RconServer(
         host=env("RCON_HOST", "mc"),

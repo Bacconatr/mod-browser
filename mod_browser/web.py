@@ -121,6 +121,30 @@ class Requests:
     intake: Intake
 
 
+_TRUSTED: list[Any] = [ipaddress.ip_network("127.0.0.0/8"), ipaddress.ip_network("::1/128")]
+
+
+def set_trusted_proxies(networks: list[str]) -> None:
+    """Replace the addresses whose X-Forwarded-For is believed (default: loopback only)."""
+    _TRUSTED[:] = [ipaddress.ip_network(n.strip(), strict=False) for n in networks if n.strip()]
+
+
+def is_trusted(peer: str) -> bool:
+    try:
+        address = ipaddress.ip_address(peer)
+    except ValueError:
+        return False
+    return any(address in net for net in _TRUSTED if net.version == address.version)
+
+
+def client_key(address: str) -> str:
+    try:
+        ip = ipaddress.ip_address(address[:64])
+    except ValueError:
+        return "unknown"
+    return str(ipaddress.ip_network(f"{ip}/64", strict=False)) if ip.version == 6 else str(ip)
+
+
 @dataclass
 class Req:
     """One request to a dynamic route."""
@@ -133,18 +157,6 @@ class Req:
     match: re.Match[str]
     peer: str = ""
 
-    @property
-    def client(self) -> str:
-        """Who is asking, for rate limits. Caddy runs beside this app and sets X-Forwarded-For;
-        it is believed only when the connection itself comes from a private or loopback address,
-        so a direct caller cannot pick its own identity."""
-        forwarded = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
-        try:
-            local = ipaddress.ip_address(self.peer).is_private
-        except ValueError:
-            local = False
-        return forwarded[:64] if forwarded and local else self.peer
-
     def json(self) -> dict[str, Any]:
         if not self.body:
             return {}
@@ -155,6 +167,15 @@ class Req:
         if not isinstance(data, dict):
             raise Refused(400, "The body must be a JSON object.")
         return data
+
+    @property
+    def client(self) -> str:
+        """Who is asking, for rate limits. Caddy runs beside this app and sets X-Forwarded-For; its
+        last entry is believed only when the connection itself comes from a trusted proxy address
+        (loopback unless MOD_BROWSER_TRUSTED_PROXIES says otherwise), so no one else can choose
+        their own identity. IPv6 clients are grouped by /64, so rotating the low bits buys nothing."""
+        forwarded = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
+        return client_key(forwarded) if forwarded and is_trusted(self.peer) else client_key(self.peer)
 
 
 DynamicRoute = tuple[str, "re.Pattern[str]", Callable[[Req], "Response"]]
@@ -178,7 +199,7 @@ class App:
         self.requests = requests if browse is not None else None
         # An unset or short password leaves /admin shut (404), never open.
         self._admin_password = admin_password if admin_password and len(admin_password) >= MIN_ADMIN_PASSWORD else None
-        self._bad_logins = KeyedLimiter(10, 60.0)
+        self._bad_logins = KeyedLimiter(10, 60.0, ceiling=300)
         pages = ("index.html", "add.html", "queue.html", "admin.html")
         self._page, self._add_page, self._queue_page, self._admin_page = (
             self._render(f, name, monitor.address, browse is not None, self.requests is not None) for f in pages)
