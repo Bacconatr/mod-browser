@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import gzip
+import os
 import socket
 import struct
 import tempfile
@@ -110,6 +112,31 @@ class RconTest(unittest.TestCase):
             "[12Nov2026 13:58:51.604] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher running\n"
             "[12Nov2026 14:54:42.000] [Server thread/INFO]: later\n")
         self.assertEqual(self.server().last_start().isoformat(), "2026-11-12T13:58:51-05:00")
+
+    def _rolled(self, name: str, first: str, mtime: int) -> None:
+        path = self.tmp / name
+        with gzip.open(path, "wt") as out:
+            out.write(first + "\n[12Nov2026 23:59:00.000] [Server thread/INFO]: more\n")
+        os.utime(path, (mtime, mtime))
+
+    def test_last_start_survives_the_midnight_log_roll(self):
+        # Measured on guest 120, 2026-11-13: the server started 12 Nov 13:58, and at midnight
+        # log4j rolled latest.log, whose first line became a Server-thread save at 00:04.
+        (self.tmp / "latest.log").write_text(
+            "[13Nov2026 00:04:42.208] [Server thread/INFO] [dev.ryanhcode.sable.Sable/]: Saving sub-levels\n")
+        self._rolled("2026-11-12-3.log.gz", "[12Nov2026 12:12:19.255] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher running", 1_000)
+        self._rolled("2026-11-12-1.log.gz", "[12Nov2026 13:58:51.604] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher running", 3_000)
+        self._rolled("2026-11-12-2.log.gz", "[12Nov2026 00:03:17.407] [Server thread/INFO] [dev.ryanhcode.sable.Sable/]: Saving", 500)
+        self.assertEqual(self.server().last_start().isoformat(), "2026-11-12T13:58:51-05:00")
+
+    def test_a_rolled_log_with_no_start_in_reach_is_unknown_not_midnight(self):
+        (self.tmp / "latest.log").write_text("[13Nov2026 00:04:42.208] [Server thread/INFO]: Saving\n")
+        self.assertIsNone(self.server().last_start())
+
+    def test_debug_logs_are_not_read_as_starts(self):
+        (self.tmp / "latest.log").write_text("[13Nov2026 00:04:42.208] [Server thread/INFO]: Saving\n")
+        self._rolled("debug-1.log.gz", "[13Nov2026 09:00:00.000] [main/INFO] [cpw.mods.modlauncher.Launcher/MODLAUNCHER]: ModLauncher running", 9_000)
+        self.assertIsNone(self.server().last_start())
 
     def test_last_start_unknown_without_a_log(self):
         self.assertIsNone(self.server().last_start())
