@@ -45,6 +45,7 @@ import mimetypes
 import re
 import sys
 import threading
+import tomllib
 import traceback
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -52,12 +53,13 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from .catalog import SOURCES, camel, default_version
 from .intake import Intake, Refused
 from .limits import KeyedLimiter
 from .pack import PackCatalog, search
+from .prism import PackFiles, instance_zip
 from .ports import CatalogPort, InstalledPort, JarPort
 from .queue import InvalidTransition, NoSuchRequest, Queue
 from .resolver import Busy, NotFound, Verdict, resolve
@@ -155,6 +157,17 @@ def client_key(address: str) -> str:
 
 
 @dataclass
+class Setup:
+    """What the Prism instance and the public pack files are built from."""
+
+    files: PackFiles
+    pack_url: str
+    bootstrap_jar: Path | None = None
+    min_mb: int = 2048
+    max_mb: int = 6144
+
+
+@dataclass
 class Req:
     """One request to a dynamic route."""
 
@@ -208,25 +221,32 @@ class App:
 
     def __init__(self, monitor: StatusMonitor, catalog: PackCatalog, name: str = "Tel Aviv",
                  browse: "Browse | None" = None, requests: "Requests | None" = None,
-                 admin_password: str | None = None):
+                 admin_password: str | None = None, setup: "Setup | None" = None):
+        self.setup = setup
+        self._zip: tuple[Any, bytes] | None = None
         self.monitor, self.catalog, self.name, self.browse = monitor, catalog, name, browse
         self.requests = requests if browse is not None else None
         # An unset or short password leaves /admin shut (404), never open.
         self._admin_password = admin_password if admin_password and len(admin_password) >= MIN_ADMIN_PASSWORD else None
         self._bad_logins = KeyedLimiter(10, 60.0, ceiling=300)
-        pages = ("index.html", "add.html", "queue.html", "admin.html")
-        self._page, self._add_page, self._queue_page, self._admin_page = (
-            self._render(f, name, monitor.address, browse is not None, self.requests is not None) for f in pages)
+        pages = ("index.html", "add.html", "queue.html", "admin.html", "setup.html")
+        self._page, self._add_page, self._queue_page, self._admin_page, self._setup_page = (
+            self._render(f, name, monitor.address, browse is not None, self.requests is not None, setup is not None)
+            for f in pages)
         self._mods_json: tuple[str, bytes] | None = None
 
     @staticmethod
-    def _render(filename: str, name: str, address: str, browsing: bool, queueing: bool = False) -> bytes:
+    def _render(filename: str, name: str, address: str, browsing: bool, queueing: bool = False,
+                setting_up: bool = False) -> bytes:
         text = (STATIC / filename).read_text()
-        links = ""
+        links = []
         if browsing:
-            links += '<p><a href="/add">Looking for a mod that is not in the pack? Find one.</a>'
-            links += ' <a href="/queue">See what friends have asked for.</a></p>' if queueing else "</p>"
-        text = text.replace("{{addlink}}", links)
+            links.append('<a href="/add">Looking for a mod that is not in the pack? Find one.</a>')
+        if queueing:
+            links.append('<a href="/queue">See what friends have asked for.</a>')
+        if setting_up:
+            links.append('<a href="/setup">Set up the game on your computer.</a>')
+        text = text.replace("{{addlink}}", "<p>" + " ".join(links) + "</p>" if links else "")
         text = text.replace("{{requesting}}", "true" if queueing else "false")
         for key, value in {"name": name, "address": address}.items():
             text = text.replace("{{" + key + "}}", html.escape(value))
@@ -407,8 +427,71 @@ class App:
             return fn(req)
         return guarded
 
+    # ---- setting up: the Prism instance, the public pack files, what changed ----
+    def setup_info(self, req: Req) -> Response:
+        data = self.catalog.catalog()
+        pack = data["pack"]
+        have_jar = self.setup.bootstrap_jar is not None and self.setup.bootstrap_jar.is_file()
+        return _json({
+            "address": self.monitor.address,
+            "packUrl": self.setup.pack_url,
+            "minecraft": pack["minecraft"], "neoforge": pack["neoforge"],
+            "instance": {"available": have_jar, "url": "/prism/instance.zip", "memoryMb": self.setup.max_mb},
+            "manual": [{"name": m["name"], "filename": m["filename"], "url": m["source"]["url"]}
+                       for m in data["mods"] if m.get("manual")],
+            "pack": {"commit": pack["commit"], "version": pack["version"]},
+        })
+
+    def pack_changes(self, req: Req) -> Response:
+        since = (req.query.get("since") or [""])[0]
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", since):
+            return _error(HTTPStatus.BAD_REQUEST, "since must be a date like 2026-11-12")
+        mods = [m for m in self.catalog.catalog()["mods"] if m["addedOn"] and m["origin"] != "base"]
+        latest = max((m["addedOn"] for m in mods), default=None)
+        added = [{"name": m["name"], "on": m["addedOn"], "by": m["addedBy"]} for m in mods if m["addedOn"] >= since]
+        return _json({"since": since, "changed": bool(added), "latest": latest, "added": added})
+
+    def prism_zip(self, req: Req) -> Response:
+        jar = self.setup.bootstrap_jar
+        if jar is None or not jar.is_file():
+            return _error(HTTPStatus.NOT_FOUND, "the instance is not available yet")
+        stat = jar.stat()
+        key = (self.catalog.catalog()["pack"]["commit"], stat.st_size, stat.st_mtime_ns, self.setup.pack_url)
+        if self._zip is None or self._zip[0] != key:
+            pack = tomllib.loads((self.setup.files.root / "pack.toml").read_text())
+            blob = instance_zip(pack, jar.read_bytes(), name=self.name, pack_url=self.setup.pack_url,
+                                max_mb=self.setup.max_mb, min_mb=self.setup.min_mb)
+            self._zip = (key, blob)
+        filename = re.sub(r"[^A-Za-z0-9]+", "-", self.name).strip("-") or "instance"
+        return 200, "application/zip", self._zip[1], {
+            "Content-Disposition": f'attachment; filename="{filename}.zip"', "Cache-Control": "no-cache"}
+
+    def pack_file(self, req: Req) -> Response:
+        rel = unquote(req.match.group(1))
+        data = None if "\x00" in rel or "\\" in rel else self.setup.files.read(rel)
+        if data is None:
+            return _error(HTTPStatus.NOT_FOUND, "not found")
+        kind = "text/plain; charset=utf-8" if rel.endswith(".toml") else "application/octet-stream"
+        fresh = rel in ("pack.toml", "index.toml")
+        return 200, kind, data, {"Cache-Control": "no-cache" if fresh else "public, max-age=60"}
+
+    def _setup_dynamic(self) -> list[DynamicRoute]:
+        if self.setup is None:
+            return []
+        answer = self._answering
+        return [
+            ("GET", re.compile(r"^/setup$"), self._page_of(self._setup_page)),
+            ("GET", re.compile(r"^/api/setup$"), answer(self.setup_info)),
+            ("GET", re.compile(r"^/api/pack/changes$"), answer(self.pack_changes)),
+            ("GET", re.compile(r"^/prism/instance\.zip$"), answer(self.prism_zip)),
+            ("GET", re.compile(r"^/pack/(.{1,200})$"), answer(self.pack_file)),
+        ]
+
     @property
     def public_dynamic(self) -> list[DynamicRoute]:
+        return [*self._setup_dynamic(), *self._request_dynamic()]
+
+    def _request_dynamic(self) -> list[DynamicRoute]:
         if self.requests is None:
             return []
         answer = self._answering

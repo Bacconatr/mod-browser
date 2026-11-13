@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Set up the game · {{name}}</title>
+<meta name="description" content="Import one Prism Launcher instance and the game keeps its mods in step with {{name}} by itself.">
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23d6a93f'/%3E%3C/svg%3E">
+<script src="/static/setup.js" defer></script>
+</head>
+<body>
+<header class="band" data-state="unknown">
+  <div class="wrap">
+    <h1><a href="/">{{name}}</a></h1>
+    <p class="detail">Set up the game on your computer. Server address <strong>{{address}}</strong>.</p>
+  </div>
+</header>
+<main class="wrap find steps">
+  <p id="pack-notice" class="notice" role="status" aria-live="polite" hidden></p>
+  <ol>
+    <li><strong>Install Prism Launcher</strong> from <a href="https://prismlauncher.org/download/" rel="noopener noreferrer">prismlauncher.org</a> and sign in with your Minecraft account.</li>
+    <li><strong>Download the instance.</strong> <a id="download" class="button solid" href="/prism/instance.zip" download>Download for Prism</a>
+      <span id="download-note" class="muted small"></span></li>
+    <li><strong>Import it.</strong> In Prism choose <em>Add Instance</em>, then <em>Import</em>, then pick the zip you just downloaded. Prism will offer to download Java 21 if you do not have it: say yes.</li>
+    <li><strong>Launch it.</strong> The first launch downloads the mods (a few minutes). Every launch after that updates them to match the server, so you never fail a login over a mismatch.</li>
+    <li><strong>Join</strong> <code id="address">{{address}}</code> from <em>Multiplayer</em>.</li>
+  </ol>
+  <p class="muted small" id="memory-note"></p>
+  <section id="manual" hidden>
+    <h2>Mods you download by hand</h2>
+    <p class="muted">The authors of these mods do not allow other launchers to download them. The first launch will stop and name each one: open its page, download the file named below, and put it in the folder the launcher shows. You only do this once per mod.</p>
+    <ul id="manual-list" class="found-list"></ul>
+  </section>
+  <section>
+    <h2>Did the pack change?</h2>
+    <form id="since-form" class="filters">
+      <div class="field"><label for="since">When did you last play?</label><input id="since" type="date"></div>
+      <div class="field"><label for="since-go" class="sr">Check</label><button id="since-go" class="button solid" type="submit">Check</button></div>
+    </form>
+    <ul id="changes" class="found-list" aria-live="polite"></ul>
+  </section>
+</main>
+<noscript><p class="wrap">This page needs JavaScript for the live details. The steps above still apply: the instance is at /prism/instance.zip.</p></noscript>
+</body>
+</html>

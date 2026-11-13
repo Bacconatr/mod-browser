@@ -13,12 +13,13 @@ from .modrinth import ModrinthCatalog
 from .net import CachingHttp, FetchHttp
 from .intake import Intake
 from .pack import PackCatalog
+from .prism import PackFiles
 from .queue import Queue
 from .whitelist import FileWhitelist
 from .rcon import RconServer
 from .status import StatusMonitor
 from .sources import CompositeCatalog, DirInstalled, HttpJars
-from .web import App, Browse, Requests, Servers, set_trusted_proxies
+from .web import App, Browse, Requests, Servers, Setup, set_trusted_proxies
 
 
 def env(name: str, default: str) -> str:
@@ -51,6 +52,13 @@ def requests_from_env(browse: Browse | None) -> Requests | None:
     return Requests(queue=queue, intake=Intake(queue, browse.resolve, FileWhitelist(whitelist)))
 
 
+def setup_from_env(pack_dir: Path) -> Setup:
+    public = env("PUBLIC_URL", "https://mods.example.com").rstrip("/")
+    jar = env("BOOTSTRAP_JAR", "/srv/prism/packwiz-installer-bootstrap.jar")
+    return Setup(files=PackFiles(pack_dir), pack_url=f"{public}/pack/pack.toml", bootstrap_jar=Path(jar),
+                 min_mb=int(env("PRISM_MIN_MB", "2048")), max_mb=int(env("PRISM_MAX_MB", "6144")))
+
+
 def admin_password_from_env() -> str | None:
     path = Path(env("ADMIN_PASSWORD_FILE", "/run/secrets/aeronautics/admin"))
     return path.read_text().strip() if path.is_file() else None
@@ -70,10 +78,12 @@ def main() -> None:
     )
     monitor = StatusMonitor(server, address=env("SERVER_ADDRESS", "play.example.com"),
                             max_age=float(env("STATUS_MAX_AGE", "10")))
-    catalog = PackCatalog(Path(env("PACK_DIR", "/srv/pack")))
+    pack_dir = Path(env("PACK_DIR", "/srv/pack"))
+    catalog = PackCatalog(pack_dir)
     browse = browse_from_env()
     app = App(monitor, catalog, name=env("SERVER_NAME", "Tel Aviv"), browse=browse,
-              requests=requests_from_env(browse), admin_password=admin_password_from_env())
+              requests=requests_from_env(browse), admin_password=admin_password_from_env(),
+              setup=setup_from_env(pack_dir))
     servers = Servers(
         app,
         public=(env("LISTEN_HOST", "0.0.0.0"), int(env("LISTEN_PORT", "8080"))),
