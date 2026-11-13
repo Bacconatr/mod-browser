@@ -107,7 +107,7 @@ class FetchHttp:
         total = 0
         try:
             while True:
-                chunk = response.read(64 * 1024)
+                chunk = response.read1(64 * 1024)  # read() would wait for all 64 KiB, hiding a slow drip from the deadline
                 if not chunk:
                     break
                 total += len(chunk)
