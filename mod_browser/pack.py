@@ -31,6 +31,7 @@ _QUALIFIER = re.compile(r"^(?:alpha|beta|rc\d*|pre\d*|snapshot|hotfix\d*)$", re.
 _DATE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
 _TRAILER = re.compile(r"^Requested-by:\s*(.+?)\s*$", re.M | re.I)
 _EXTRA_SECTION = re.compile(r"^## Mods added on top of.*?$(.*?)(?=^## |\Z)", re.M | re.S)
+_BLOCKED_SECTION = re.compile(r"^## [^\n]*distribution[- ]blocked[^\n]*$(.*?)(?=^## |\Z)", re.M | re.S | re.I)
 _METAFILE = re.compile(r"`((?:[\w.-]+/)*[\w.-]+\.pw\.toml)`")
 
 
@@ -80,6 +81,13 @@ def extras_from_notes(notes: str) -> dict[str, str | None]:
         date = _DATE.search(block)
         extras[paths[0]] = date.group(1) if date else None
     return extras
+
+
+def blocked_from_notes(notes: str) -> set[str]:
+    """Metafile paths the pack's NOTES.md lists as distribution-blocked: their author forbids
+    hosting outside CurseForge, so a player's launcher asks them to download each by hand."""
+    section = _BLOCKED_SECTION.search(notes)
+    return set(_METAFILE.findall(section.group(1))) if section else set()
 
 
 class PackUnreadable(Exception):
@@ -145,7 +153,9 @@ class PackCatalog:
         pack = tomllib.loads((self.root / "pack.toml").read_text())
         index = tomllib.loads((self.root / pack.get("index", {}).get("file", "index.toml")).read_text())
         notes_file = self.root / "NOTES.md"
-        extras = extras_from_notes(notes_file.read_text()) if notes_file.exists() else {}
+        notes = notes_file.read_text() if notes_file.exists() else ""
+        extras = extras_from_notes(notes)
+        blocked = blocked_from_notes(notes)
         added, root_sha = self._history()
         base_name = f"{pack.get('name', 'the base pack')}"
         owner = pack.get("author") or "the owner"
@@ -175,6 +185,7 @@ class PackCatalog:
                 "side": meta.get("side", "both"),
                 "kind": _KINDS.get(folder, "data pack"),
                 "source": _source(meta),
+                "manual": path in blocked,
                 "origin": origin,
                 "addedBy": by,
                 "addedOn": on,

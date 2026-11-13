@@ -106,6 +106,28 @@ requests per name, 200 open in all, bodies of 8 KiB. The queue is SQLite in
 `MOD_BROWSER_DATA_DIR`; without that directory, the whitelist file or browsing,
 requests are off and `/queue` and `/admin` are 404.
 
+## Setting up the game: the Prism instance (`/setup`)
+
+`/prism/instance.zip` is a Prism Launcher instance built on request from the
+pack's own `pack.toml`: Minecraft and NeoForge components, a memory setting,
+`packwiz-installer-bootstrap.jar` in `.minecraft/`, and the pre-launch command
+`"$INST_JAVA" -jar packwiz-installer-bootstrap.jar -s client <pack.toml URL>`.
+On every launch packwiz-installer makes the mods folder match the pack, adding,
+updating and removing; `-s client` skips mods whose metafile says `side =
+"server"`. `/setup` has the five steps, the server address, the base-pack mods
+that must be downloaded by hand (the metafiles NOTES.md lists under a
+"Distribution-blocked mods" heading), and "when did you last play?" against
+`/api/pack/changes?since=YYYY-MM-DD`.
+
+The launcher reads the pack from **`/pack/<file>`**: only `pack.toml`,
+`index.toml` and the files `index.toml` lists, found through the index so
+nothing else in the directory (NOTES.md, `.git`) is reachable. **Anything the
+index lists is public: never put a secret in the pack.**
+
+The bootstrap jar is not in this repository. The deploy must put a pinned
+copy on disk (`MOD_BROWSER_BOOTSTRAP_JAR`); without it `/prism/instance.zip` is
+a 404 and `/setup` says the instance is not published yet.
+
 ## Configuration (environment)
 
 | Variable | Default |
@@ -120,6 +142,9 @@ requests are off and `/queue` and `/admin` are 404.
 | `MOD_BROWSER_SERVER_NAME`, `_SERVER_ADDRESS` | `Tel Aviv`, `play.example.com` |
 | `MOD_BROWSER_STATUS_MAX_AGE` | `10` (seconds) |
 | `MOD_BROWSER_TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` (whose `X-Forwarded-For` is believed) |
+| `MOD_BROWSER_PUBLIC_URL` | `https://mods.example.com` (the pack URL in the instance is `<this>/pack/pack.toml`) |
+| `MOD_BROWSER_BOOTSTRAP_JAR` | `/srv/prism/packwiz-installer-bootstrap.jar` |
+| `MOD_BROWSER_PRISM_MIN_MB` / `_MAX_MB` | `2048` / `6144` |
 | `MOD_BROWSER_DATA_DIR` | `/srv/data` (writable; holds `requests.db`) |
 | `MOD_BROWSER_WHITELIST_FILE` | `/srv/whitelist.json` (read-only) |
 | `MOD_BROWSER_ADMIN_PASSWORD_FILE` | `/run/secrets/aeronautics/admin` |
