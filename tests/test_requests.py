@@ -269,7 +269,9 @@ class AdminAccessTest(RequestsCase):
         noisy = {"X-Forwarded-For": "203.0.113.9"}
         for _ in range(10):
             self.call("GET", self.public + "/admin", headers={**self.owner("guess guess guess guess guess"), **noisy})
-        self.assertEqual(self.call("GET", self.public + "/admin", headers={**self.owner(), **noisy})[0], 429)
+        self.assertEqual(self.call("GET", self.public + "/admin", headers={**self.owner("guess guess guess guess guess"), **noisy})[0], 429)
+        # The right password gets in even from a locked-out address, and is not counted.
+        self.assertEqual(self.call("GET", self.public + "/admin", headers={**self.owner(), **noisy})[0], 200)
         # The owner, from another address, is not locked out by someone else's guessing.
         self.assertEqual(self.call("GET", self.public + "/admin", headers={**self.owner(), "X-Forwarded-For": "198.51.100.7"})[0], 200)
 
