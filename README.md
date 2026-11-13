@@ -92,7 +92,7 @@ or queued request with a fixed reason.
 |---|---|
 | `GET /queue`, `GET /api/requests` | anyone |
 | `POST /api/requests` `{name, source, id, version}` | anyone with a whitelisted name; JSON only, same origin |
-| `GET /admin`, `/admin/api/requests[/<id>/<action>]` | the owner: HTTP Basic, any user name, the vault password (20+ chars; a shorter or missing one leaves `/admin` a 404). 10 wrong guesses a minute lock that client out for a minute |
+| `GET /admin`, `/admin/api/requests[/<id>/<action>]` | the owner: HTTP Basic, any user name, the vault password (20+ chars; a shorter or missing one leaves `/admin` a 404). The right password always gets in; 10 wrong guesses a minute lock that client out for a minute |
 | `GET /admin-api/v1/requests?since=<seq>`, `POST /admin-api/v1/requests[/<id>/<action>]` | PVE, on the loopback listener only; no password, because only `docker exec` reaches it |
 
 Actions: `approve`, `deny {reason}`, `override {version}`, `remove`, `requeue`.
