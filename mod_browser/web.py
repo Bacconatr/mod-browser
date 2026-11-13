@@ -24,6 +24,7 @@ Admin listener (bound to loopback inside the container; nothing proxies it):
   POST /admin-api/v1/requests                 add as the owner
   POST /admin-api/v1/requests/<id>/<action>   approve | deny | override | remove | requeue
   POST /admin-api/v1/restart-now              apply what is queued without waiting (still test-boots and backs up)
+  POST /admin-api/v1/applier/resume           clear a halt after the owner has checked the server
   GET  /admin-api/v1/upstream                 the daily upstream check: last result, any error (reported once a day)
   POST /admin-api/v1/upstream/check           check now
   PVE reaches it with `pct exec` + `docker exec`, so it needs no password and
@@ -421,6 +422,13 @@ class App:
             raise Refused(409, "Nothing is queued.")
         return _json({"apply": self.applier.request_restart_now()})
 
+    def _resume(self, req: Req) -> Response:
+        """Clear a halt once the owner has checked the server. Loopback only: a halt is never cleared from the Internet."""
+        self._same_origin(req)
+        if self.applier is None:
+            raise Refused(409, "The applier is switched off.")
+        return _json({"apply": self.applier.resume()})
+
     def _upstream_status(self, req: Req) -> Response:
         return _json({"upstream": self.upstream.status() if self.upstream is not None else {"configured": False}})
 
@@ -548,6 +556,7 @@ class App:
             ("POST", re.compile(r"^/admin-api/v1/requests$"), answer(self._owner_add)),
             ("POST", re.compile(rf"^/admin-api/v1/requests/{_ROUTE_ID}/({'|'.join(ADMIN_ACTIONS)})$"), answer(self._owner_act)),
             ("POST", re.compile(r"^/admin-api/v1/restart-now$"), answer(self._restart_now)),
+            ("POST", re.compile(r"^/admin-api/v1/applier/resume$"), answer(self._resume)),
             ("GET", re.compile(r"^/admin-api/v1/upstream$"), answer(self._upstream_status)),
             ("POST", re.compile(r"^/admin-api/v1/upstream/check$"), answer(self._upstream_check)),
         ]

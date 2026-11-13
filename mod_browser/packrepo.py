@@ -203,6 +203,14 @@ class GitPackRepo:
         self._git("merge", "--no-ff", "-q", "-m", f"Apply batch {staged.batch}", staged.branch)
         return self.head()
 
+    def promoted(self, batch: int) -> bool:
+        """Whether the live pack holds batch `batch`'s merge (its `promote` ran)."""
+        try:
+            subjects = self._git("log", "--merges", "--format=%s", "-n", "200").splitlines()
+        except StageError:
+            return True  # cannot tell: treat as promoted, which halts rather than guesses
+        return f"Apply batch {batch}" in subjects
+
     def revert(self, merge: str) -> str:
         self._git("revert", "-m", "1", "--no-edit", merge)
         return self.head()

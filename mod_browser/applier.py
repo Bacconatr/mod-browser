@@ -43,6 +43,7 @@ SLOT = (5, 0)
 SLOT_WINDOW = timedelta(hours=1)
 NIGHTLY_COUNTDOWN = (300, 60, 10)
 NOW_COUNTDOWN = (30,)
+HALT_KEY = "applier.halted"
 
 
 def _clock_text(moment: datetime) -> str:
@@ -61,7 +62,9 @@ class Applier:
         self.test_timeout, self.boot_timeout, self.grace = test_timeout, boot_timeout, grace
         self._lock = threading.Lock()
         self._restart_now = False
-        self._halted: str | None = None
+        # Kept in the queue's database: a halt means the live server may be in a state nobody checked,
+        # so a restart of this container (a deploy, an OOM kill) must not quietly resume applying.
+        self._halted: str | None = queue.kv_get(HALT_KEY)
         self._status: dict[str, Any] = {"phase": "idle", "detail": "", "since": None, "nextAt": None}
         self._set("idle", "")
 
@@ -80,6 +83,14 @@ class Applier:
         It still test-boots and backs up first, and warns players for 30 seconds."""
         with self._lock:
             self._restart_now = True
+        return self.status()
+
+    def resume(self) -> dict[str, Any]:
+        """The owner has looked at the server after a halt: clear it (loopback admin API only)."""
+        with self._lock:
+            self._halted = None
+        self.queue.kv_set(HALT_KEY, "")
+        self._set("idle", "")
         return self.status()
 
     # ---- the loop ----
@@ -110,8 +121,12 @@ class Applier:
         players = self._players()
         if players == 0:
             return True, "empty"
-        if players is None and not self.server.container_running():
-            return True, "empty"  # nobody can be online in a stopped container
+        if players is None:
+            if not self.server.container_running():
+                return True, "empty"  # nobody can be online in a stopped container
+            # Up but not saying who is on (booting, or RCON down): someone may be playing and no countdown
+            # could reach them, so wait for an answer, even in the nightly window. Restart now still works.
+            return False, ""
         now = self._now()
         slot = now.replace(hour=SLOT[0], minute=SLOT[1], second=0, microsecond=0)
         if slot <= now < slot + SLOT_WINDOW:
@@ -121,11 +136,26 @@ class Applier:
     def tick(self) -> None:
         if not self.enabled or self._halted:
             return
-        # A restart of this process can leave requests mid-batch. Nothing is running them: the live
-        # pack was only changed at `promote`, so they are safe to fail and ask again.
-        for stuck in self.queue.in_flight():
-            self.queue.advance([stuck.id], ("testing", "applying"), "test-failed",
+        # A restart of this process can leave requests mid-batch. Before `promote` the live pack was not
+        # changed, so they are safe to fail and ask again. After it, the live pack holds the batch and
+        # nobody knows whether the server booted with it: that is the owner's to look at, so halt.
+        stuck = self.queue.in_flight()
+        promoted = {r.batch for r in stuck if r.batch is not None and self.repo.promoted(r.batch)}
+        for request in stuck:
+            if request.batch in promoted:
+                continue
+            self.queue.advance([request.id], ("testing", "applying"), "test-failed",
                                reason="The site restarted while this was being applied. Ask again; the live server was not changed by it.")
+        if promoted:
+            batches = ", ".join(str(b) for b in sorted(promoted))
+            ids = [r.id for r in stuck if r.batch in promoted and r.state == "applying"]
+            # The pack holds them, and the server loads the pack on every start: they are applied as far as the
+            # pack goes. Recording that keeps a resumed applier from finding them stuck again.
+            if ids:
+                self.queue.advance(ids, ("applying",), "applied",
+                                   reason="In the pack; the site restarted during the server's restart, so the owner was asked to check it.")
+            return self._halt(None, f"The site restarted after batch {batches} was merged into the live pack, so whether the "
+                                    "server came up with it is unknown. Check the server, roll the pack back by hand if needed, then resume.")
         queued = self.queue.queued()
         if not queued:
             with self._lock:
@@ -220,6 +250,7 @@ class Applier:
             self.queue.advance(ids, ("applying",), "rolled-back", reason=reason)
         with self._lock:
             self._halted = reason
+        self.queue.kv_set(HALT_KEY, reason)
         self._set("halted", reason)
         log.error("applier halted: %s", reason)
 

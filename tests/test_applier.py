@@ -217,6 +217,44 @@ class ApplyTest(ApplierCase):
         self.assertEqual(self.state_of(rid), "test-failed")
         self.assertEqual(self.host.calls, [])
 
+    def fresh_applier(self) -> Applier:
+        """The same queue and pack after the site's container restarted (a deploy, an OOM kill)."""
+        self.app.applier = Applier(self.queue, self.repo, self.host, self.fake_server, enabled=True, now=lambda: self.moment,
+                                   sleep=self.sleeps.append, test_timeout=0.2, boot_timeout=0.2, grace=0.1)
+        return self.app.applier
+
+    def test_a_site_restart_after_the_pack_was_promoted_halts_instead_of_claiming_live_was_untouched(self):
+        (rid,) = self.queued(CONNECTED)
+        staged = self.repo.stage(7, self.queue.queued())
+        self.queue.advance([rid], ("queued",), "applying", batch=7)
+        self.repo.promote(staged)                                    # merged into the live pack, then the process died
+        self.repo.discard(staged)
+        applier = self.fresh_applier()
+        applier.tick()
+        self.assertNotIn("was not changed", self.queue.get(rid).reason or "")
+        self.assertEqual(applier.status()["phase"], "halted")
+        self.assertIn("batch 7", applier.status()["halted"])
+        self.queued(PONDER, name="Fake_Friend")
+        applier.tick()
+        self.assertEqual(self.host.calls, [])                        # nothing more until the owner looks
+        self.assertEqual(self.state_of(rid), "applied")              # the pack holds it
+        status, _, _ = self.call("POST", self.local + "/admin-api/v1/applier/resume", {})
+        self.assertEqual(status, 200)
+        applier.tick()                                               # resumed: it is not found stuck again
+        self.assertEqual(applier.status()["halted"], None)
+
+    def test_a_halt_survives_a_restart_of_the_site(self):
+        (rid,) = self.queued(CONNECTED)
+        self.host.live_results = [BootResult(False, "boom"), BootResult(False, "still boom")]
+        self.applier.tick()
+        self.assertEqual(self.applier.status()["phase"], "halted")
+        calls = list(self.host.calls)
+        applier = self.fresh_applier()
+        self.assertIn("still boom", applier.status()["halted"] or "")
+        self.queued(PONDER, name="Fake_Friend")
+        applier.tick()
+        self.assertEqual(self.host.calls, calls)
+
     def test_the_off_switch_means_nothing_runs_and_the_page_shows_no_apply(self):
         self.queued(CONNECTED)
         self.applier.enabled = False
@@ -241,6 +279,18 @@ class WhenTest(ApplierCase):
         self.assertIn("10 seconds", says[2])
         self.assertEqual(self.sleeps, [240, 50, 10])
         self.assertLess(self.host.calls.index("test_boot"), self.host.calls.index("backup"))
+
+    def test_at_the_nightly_slot_a_server_that_cannot_say_who_is_on_is_not_restarted_unwarned(self):
+        (rid,) = self.queued(CONNECTED)
+        self.fake_server.rcon_up = False                              # up, but RCON does not answer: no list, no say
+        self.moment = datetime(2026, 11, 14, 5, 10, tzinfo=EST)
+        self.applier.tick()
+        self.assertEqual((self.state_of(rid), self.host.calls), ("queued", []))
+        self.fake_server.rcon_up = True                               # answers again, still in the window
+        self.fake_server.players = ["Test_Player"]
+        self.applier.tick()
+        self.assertEqual(self.state_of(rid), "applied")
+        self.assertEqual(len([c for c in self.fake_server.commands if c.startswith("say ")]), 3)
 
     def test_restart_now_skips_the_wait_but_never_the_test_boot_or_the_backup(self):
         (rid,) = self.queued(CONNECTED)
