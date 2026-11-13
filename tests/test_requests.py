@@ -273,6 +273,31 @@ class AdminAccessTest(RequestsCase):
         # The owner, from another address, is not locked out by someone else's guessing.
         self.assertEqual(self.call("GET", self.public + "/admin", headers={**self.owner(), "X-Forwarded-For": "198.51.100.7"})[0], 200)
 
+    def test_a_forwarded_address_from_an_untrusted_peer_is_ignored(self):
+        from mod_browser.web import client_key, is_trusted, set_trusted_proxies
+        self.assertTrue(is_trusted("127.0.0.1"))
+        self.assertFalse(is_trusted("10.0.0.50"))     # a private address is not automatically a proxy
+        self.assertEqual(client_key("2001:db8:1:2:aaaa:bbbb:cccc:dddd"), client_key("2001:db8:1:2::1"))
+        self.assertNotEqual(client_key("2001:db8:1:2::1"), client_key("2001:db8:1:3::1"))
+        set_trusted_proxies(["10.0.0.0/8"])
+        self.addCleanup(set_trusted_proxies, ["127.0.0.1/32", "::1/128"])
+        self.assertTrue(is_trusted("10.1.2.3"))
+        self.assertFalse(is_trusted("127.0.0.1"))
+
+    def test_many_addresses_cannot_add_up_to_an_unbounded_guess_rate(self):
+        from mod_browser.limits import KeyedLimiter
+        limiter = KeyedLimiter(2, 60.0, ceiling=5)
+        for i in range(5):
+            limiter.record(f"10.0.0.{i}")
+        self.assertTrue(limiter.full("10.0.0.99"))   # a fresh client still hits the shared ceiling
+
+    def test_a_locked_client_is_not_evicted_to_make_room(self):
+        from mod_browser.limits import KeyedLimiter
+        limiter = KeyedLimiter(1, 60.0, ceiling=100, keys=2)
+        limiter.record("a"); limiter.record("b")      # both locked
+        self.assertTrue(limiter.full("c"))             # the table is full of locked clients: turned away
+        self.assertTrue(limiter.full("a"))             # and a was not forgotten
+
     def test_without_a_long_enough_password_configured_admin_is_shut_not_open(self):
         for password in (None, "short"):
             self.start(password=password)

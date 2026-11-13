@@ -100,8 +100,8 @@ Actions: `approve`, `deny {reason}`, `override {version}`, `remove`, `requeue`.
 misses a change; the answer's `seq` is the next `since`.
 
 Limits: 30 asks a minute (everyone together), 20 wrong names a minute per client
-(a client is Caddy's `X-Forwarded-For`, believed only from a private or
-loopback peer), 5 open
+(a client is Caddy's `X-Forwarded-For`, believed only from `MOD_BROWSER_TRUSTED_PROXIES`,
+default loopback; IPv6 grouped by /64), with a ceiling over all clients together, 5 open
 requests per name, 200 open in all, bodies of 8 KiB. The queue is SQLite in
 `MOD_BROWSER_DATA_DIR`; without that directory, the whitelist file or browsing,
 requests are off and `/queue` and `/admin` are 404.
@@ -119,6 +119,7 @@ requests are off and `/queue` and `/admin` are 404.
 | `MOD_BROWSER_PACK_DIR` | `/srv/pack` |
 | `MOD_BROWSER_SERVER_NAME`, `_SERVER_ADDRESS` | `Tel Aviv`, `play.example.com` |
 | `MOD_BROWSER_STATUS_MAX_AGE` | `10` (seconds) |
+| `MOD_BROWSER_TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` (whose `X-Forwarded-For` is believed) |
 | `MOD_BROWSER_DATA_DIR` | `/srv/data` (writable; holds `requests.db`) |
 | `MOD_BROWSER_WHITELIST_FILE` | `/srv/whitelist.json` (read-only) |
 | `MOD_BROWSER_ADMIN_PASSWORD_FILE` | `/run/secrets/aeronautics/admin` |

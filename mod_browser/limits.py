@@ -45,26 +45,41 @@ class RateLimiter:
 
 
 class KeyedLimiter:
-    """A RateLimiter per key (a client address), so one noisy client cannot lock out the others.
+    """A RateLimiter per key (a client address), so one noisy client cannot lock out the others,
+    plus a ceiling over all keys together, so many addresses cannot add up to an unbounded rate.
 
-    At most `keys` clients are remembered; the least recently seen is dropped first.
+    At most `keys` clients are remembered. A client still locked out is never forgotten to make
+    room: the least recently seen client that is NOT locked goes first, and when every remembered
+    client is locked, a new one is turned away rather than let in on a fresh window.
     """
 
-    def __init__(self, limit: int, window: float, keys: int = 2048, clock: Callable[[], float] = time.monotonic):
+    def __init__(self, limit: int, window: float, ceiling: int, keys: int = 2048,
+                 clock: Callable[[], float] = time.monotonic):
         self.limit, self.window, self.keys, self._clock = limit, window, keys, clock
+        self._overall = RateLimiter(ceiling, window, clock)
         self._by_key: dict[str, RateLimiter] = {}
         self._lock = threading.Lock()
 
-    def _of(self, key: str) -> RateLimiter:
+    def _of(self, key: str) -> RateLimiter | None:
+        """The key's limiter, or None when the table is full of locked-out clients."""
         with self._lock:
-            limiter = self._by_key.pop(key, None) or RateLimiter(self.limit, self.window, self._clock)
+            limiter = self._by_key.pop(key, None)
+            if limiter is None:
+                while len(self._by_key) >= self.keys:
+                    idle = next((k for k, v in self._by_key.items() if not v.full()), None)
+                    if idle is None:
+                        return None
+                    del self._by_key[idle]
+                limiter = RateLimiter(self.limit, self.window, self._clock)
             self._by_key[key] = limiter  # most recently used last
-            while len(self._by_key) > self.keys:
-                self._by_key.pop(next(iter(self._by_key)))
             return limiter
 
     def full(self, key: str) -> bool:
-        return self._of(key).full()
+        limiter = self._of(key)
+        return limiter is None or limiter.full() or self._overall.full()
 
     def record(self, key: str) -> None:
-        self._of(key).record()
+        limiter = self._of(key)
+        if limiter is not None:
+            limiter.record()
+        self._overall.record()
