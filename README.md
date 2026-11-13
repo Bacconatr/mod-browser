@@ -128,6 +128,44 @@ The bootstrap jar is not in this repository. The deploy must put a pinned
 copy on disk (`MOD_BROWSER_BOOTSTRAP_JAR`); without it `/prism/instance.zip` is
 a 404 and `/setup` says the instance is not published yet.
 
+## Upstream releases (`upstream.py`)
+
+Once a day (first tick after 04:00 `America/New_York`) the app reads the newest
+**release** of CurseForge project 1518930 (the modpack), downloads its
+`manifest.json`, looks every mod up (`POST /v1/mods/files`, `/v1/mods`, which
+work for our key even though search does not) and compares it with the pack.
+A release not seen before becomes one **owner-only** request (`kind =
+"upstream"`, requester `Upstream`), shown on `/admin` with Added, Changed,
+Removed and Kept lists. It is not on the public queue, and it does nothing
+until the owner approves it; approving only queues it, and the applier takes it
+through the same test boot, backup and rollback as anything else. A release
+that changes nothing files nothing; one nobody decided on is denied as
+"replaced" when a newer one arrives; a denied release is not asked again.
+
+**What is kept.** A mod the pack holds as an extra, or that was added later, is
+never changed or removed: Deep Seas 3.4.5 stays against a bundled 3.3.0
+(`kept`, with `upstreamNewer` set when upstream is the newer one). Only base-pack
+CurseForge mods are changed or removed. A pack mod is matched to an upstream mod
+by CurseForge project id, then by its jar's name without the version, because
+the owner's pins are often Modrinth files known upstream under another id.
+
+**Stale differences.** The request records the pack commit it was computed
+against; if the pack has moved when the owner approves, it is held `approved`
+with a note until the next daily check files a fresh one.
+
+**A CurseForge outage** is logged once a day at most (kept in the queue's
+database, so a restart does not repeat it); `GET /admin-api/v1/upstream` shows
+the last result and error, and `POST .../upstream/check` (or the button on
+`/admin`) checks now.
+
+Pack operations: the request's `added` holds `{op: add | change | remove, ...}`
+entries with what a metafile needs (`change` and `remove` name the pack metafile
+they act on, and `change` keeps its side). **This PR only files them.** Writing
+them into the pack is the applier's job (#9, owner-gated); until it is merged
+and on, an approved upstream update just sits `queued`. Added mods come in
+with `side = "both"` because CurseForge's manifest does not say; the test boot
+is what catches a client-only mod loaded on the server.
+
 ## Configuration (environment)
 
 | Variable | Default |

@@ -13,6 +13,7 @@ from .modrinth import ModrinthCatalog
 from .net import CachingHttp, FetchHttp
 from .intake import Intake
 from .pack import PackCatalog
+from .upstream import CurseForgeUpstream, UpstreamChecker
 from .prism import PackFiles
 from .queue import Queue
 from .whitelist import FileWhitelist
@@ -42,14 +43,25 @@ def browse_from_env() -> Browse | None:
     return Browse(catalog=catalog, jars=HttpJars(http), installed=DirInstalled(mods_dir))
 
 
-def requests_from_env(browse: Browse | None) -> Requests | None:
+def requests_from_env(browse: Browse | None, catalog: PackCatalog) -> Requests | None:
     """Requests need browsing, a writable data directory and the server's whitelist; else they are off."""
     data_dir = Path(env("DATA_DIR", "/srv/data"))
     whitelist = Path(env("WHITELIST_FILE", "/srv/whitelist.json"))
     if browse is None or not data_dir.is_dir() or not whitelist.is_file():
         return None
     queue = Queue(data_dir / "requests.db")
-    return Requests(queue=queue, intake=Intake(queue, browse.resolve, FileWhitelist(whitelist)))
+    return Requests(queue=queue, intake=Intake(queue, browse.resolve, FileWhitelist(whitelist),
+                                                    pack_head=lambda: catalog.catalog()["pack"]["commit"]))
+
+
+def upstream_from_env(requests: Requests | None, catalog: PackCatalog) -> UpstreamChecker | None:
+    """The daily check of the base modpack. Needs requests (it files one) and the CurseForge key."""
+    if requests is None:
+        return None
+    key_file = Path(env("CURSEFORGE_API_KEY_FILE", "/run/secrets/aeronautics/curseforge"))
+    key = key_file.read_text().strip() if key_file.is_file() else ""
+    source = CurseForgeUpstream(CachingHttp(FetchHttp(timeout=30.0, jar_timeout=120.0)), key) if key else None
+    return UpstreamChecker(requests.queue, source, catalog, tz=env("LOG_TZ", "America/New_York"))
 
 
 def setup_from_env(pack_dir: Path) -> Setup:
@@ -81,15 +93,19 @@ def main() -> None:
     pack_dir = Path(env("PACK_DIR", "/srv/pack"))
     catalog = PackCatalog(pack_dir)
     browse = browse_from_env()
+    requests = requests_from_env(browse, catalog)
+    upstream = upstream_from_env(requests, catalog)
     app = App(monitor, catalog, name=env("SERVER_NAME", "Tel Aviv"), browse=browse,
-              requests=requests_from_env(browse), admin_password=admin_password_from_env(),
-              setup=setup_from_env(pack_dir))
+              requests=requests, admin_password=admin_password_from_env(),
+              setup=setup_from_env(pack_dir), upstream=upstream)
     servers = Servers(
         app,
         public=(env("LISTEN_HOST", "0.0.0.0"), int(env("LISTEN_PORT", "8080"))),
         admin=(env("ADMIN_LISTEN_HOST", "127.0.0.1"), int(env("ADMIN_LISTEN_PORT", "8081"))),
     ).start()
     stop = threading.Event()
+    if upstream is not None:
+        threading.Thread(target=upstream.run_forever, args=(stop,), daemon=True).start()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
     stop.wait()

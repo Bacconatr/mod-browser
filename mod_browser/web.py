@@ -23,6 +23,8 @@ Admin listener (bound to loopback inside the container; nothing proxies it):
   GET  /admin-api/v1/requests?since=<seq>     every request changed since a poll
   POST /admin-api/v1/requests                 add as the owner
   POST /admin-api/v1/requests/<id>/<action>   approve | deny | override | remove | requeue
+  GET  /admin-api/v1/upstream                 the daily upstream check: last result, any error (reported once a day)
+  POST /admin-api/v1/upstream/check           check now
   PVE reaches it with `pct exec` + `docker exec`, so it needs no password and
   must never be published or proxied.
 
@@ -221,7 +223,9 @@ class App:
 
     def __init__(self, monitor: StatusMonitor, catalog: PackCatalog, name: str = "Tel Aviv",
                  browse: "Browse | None" = None, requests: "Requests | None" = None,
-                 admin_password: str | None = None, setup: "Setup | None" = None):
+                 admin_password: str | None = None, setup: "Setup | None" = None,
+                 upstream: Any | None = None):
+        self.upstream = upstream
         self.setup = setup
         self._zip: tuple[Any, bytes] | None = None
         self.monitor, self.catalog, self.name, self.browse = monitor, catalog, name, browse
@@ -358,7 +362,8 @@ class App:
         return run
 
     def list_public(self, req: Req) -> Response:
-        return _json({"requests": [r.public() for r in reversed(self.requests.queue.all())]})
+        # An upstream update is the owner's alone: it is not an ask a friend made.
+        return _json({"requests": [r.public() for r in reversed(self.requests.queue.all()) if r.kind != "upstream"]})
 
     def submit(self, req: Req) -> Response:
         self._same_origin(req)
@@ -402,6 +407,15 @@ class App:
         else:
             done = intake.requeue(request_id)
         return _json({"request": done.admin()})
+
+    def _upstream_status(self, req: Req) -> Response:
+        return _json({"upstream": self.upstream.status() if self.upstream is not None else {"configured": False}})
+
+    def _upstream_check(self, req: Req) -> Response:
+        self._same_origin(req)
+        if self.upstream is None:
+            raise Refused(409, "Upstream checks are not set up.")
+        return _json({"upstream": self.upstream.check()})
 
     def _password_ok(self, req: Req) -> bool:
         header = req.headers.get("Authorization") or ""
@@ -506,6 +520,8 @@ class App:
             ("GET", root, guard(answer(self._owner_list))),
             ("POST", root, guard(answer(self._owner_add))),
             ("POST", act, guard(answer(self._owner_act))),
+            ("GET", re.compile(r"^/admin/api/upstream$"), guard(answer(self._upstream_status))),
+            ("POST", re.compile(r"^/admin/api/upstream/check$"), guard(answer(self._upstream_check))),
         ]
 
     @property
@@ -517,6 +533,8 @@ class App:
             ("GET", re.compile(r"^/admin-api/v1/requests$"), answer(self._owner_list)),
             ("POST", re.compile(r"^/admin-api/v1/requests$"), answer(self._owner_add)),
             ("POST", re.compile(rf"^/admin-api/v1/requests/{_ROUTE_ID}/({'|'.join(ADMIN_ACTIONS)})$"), answer(self._owner_act)),
+            ("GET", re.compile(r"^/admin-api/v1/upstream$"), answer(self._upstream_status)),
+            ("POST", re.compile(r"^/admin-api/v1/upstream/check$"), answer(self._upstream_check)),
         ]
 
     @property
