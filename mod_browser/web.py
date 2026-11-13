@@ -137,6 +137,15 @@ def is_trusted(peer: str) -> bool:
     return any(address in net for net in _TRUSTED if net.version == address.version)
 
 
+_WARNED: set[str] = set()
+
+
+def _warn_untrusted_once(peer: str) -> None:
+    if peer not in _WARNED and len(_WARNED) < 64:
+        _WARNED.add(peer)
+        sys.stderr.write(f"mod-browser: X-Forwarded-For from {peer} ignored; add it to MOD_BROWSER_TRUSTED_PROXIES if it is the proxy\n")
+
+
 def client_key(address: str) -> str:
     try:
         ip = ipaddress.ip_address(address[:64])
@@ -175,7 +184,12 @@ class Req:
         (loopback unless MOD_BROWSER_TRUSTED_PROXIES says otherwise), so no one else can choose
         their own identity. IPv6 clients are grouped by /64, so rotating the low bits buys nothing."""
         forwarded = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
-        return client_key(forwarded) if forwarded and is_trusted(self.peer) else client_key(self.peer)
+        if forwarded and not is_trusted(self.peer):
+            # Either a caller choosing its own identity (ignored), or the proxy is not where we think:
+            # then every friend shares the proxy's address and one limit. Say so, once per peer.
+            _warn_untrusted_once(self.peer)
+            return client_key(self.peer)
+        return client_key(forwarded) if forwarded else client_key(self.peer)
 
 
 DynamicRoute = tuple[str, "re.Pattern[str]", Callable[[Req], "Response"]]
@@ -383,12 +397,13 @@ class App:
         def guarded(req: Req) -> Response:
             if self._admin_password is None:
                 return _error(HTTPStatus.NOT_FOUND, "not found")
+            if self._password_ok(req):
+                return fn(req)  # the right password always gets in, and is never counted
             if self._bad_logins.full(req.client):
                 return _error(HTTPStatus.TOO_MANY_REQUESTS, "too many wrong passwords; wait a minute")
-            if not self._password_ok(req):
-                self._bad_logins.record(req.client)
-                status, kind, body, headers = _error(HTTPStatus.UNAUTHORIZED, "password required")
-                return status, kind, body, {**headers, "WWW-Authenticate": 'Basic realm="Tel Aviv admin", charset="UTF-8"'}
+            self._bad_logins.record(req.client)
+            status, kind, body, headers = _error(HTTPStatus.UNAUTHORIZED, "password required")
+            return status, kind, body, {**headers, "WWW-Authenticate": 'Basic realm="Tel Aviv admin", charset="UTF-8"'}
             return fn(req)
         return guarded
 
