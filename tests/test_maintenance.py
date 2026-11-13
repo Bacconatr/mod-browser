@@ -91,9 +91,12 @@ class FakeHost:
         self._step("allow")
         self.blocked = False
 
-    def stop_live(self):
+    def stop_live(self, clean=True):
         self._step("stop")
+        unclean = self.is_running and self.token is not None and not self.token_ok[self.token]
         self.is_running = False
+        if unclean and clean:
+            raise HostError("the server exited 255 (OOM killed: False), not a clean stop")  # stopped mid-boot
 
     def backup(self, dest):
         self._step("backup")

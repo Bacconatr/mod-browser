@@ -108,8 +108,9 @@ class MaintenanceHost(Protocol):
 
     def allow_joins(self) -> None: ...
 
-    def stop_live(self) -> None:
-        """Graceful stop (and the backup sidecar). Returns only once the server exited having saved the world."""
+    def stop_live(self, clean: bool = True) -> None:
+        """Graceful stop (and the backup sidecar). Returns only once the container exited; with `clean`, only
+        once it exited 0 having saved the world (a rollback, which restores the backup, needs just stopped)."""
 
     def backup(self, dest: Path) -> dict:
         """A cold backup of the world and server files, verified against the disk. Returns its manifest."""

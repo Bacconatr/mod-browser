@@ -415,7 +415,9 @@ class Runner:
         self.journal.enter(j, "rolling-back", rollbackReason=reason)
         self._say(j, "rolling-back", "The new mods did not come up. Putting the old pack and world back.")
         try:
-            self.host.stop_live()
+            # A server stopped mid-boot does not exit cleanly (255, measured in the dry run), and that is fine
+            # here: the world it may have half-written is set aside and the backup restored. Stopped is enough.
+            self.host.stop_live(clean=False)
         except HostError as exc:
             return self._halt(j, f"needs recovery: {reason}; then the server did not stop for the rollback ({exc}).")
         if self.repo.tree() != j["beforeTree"]:

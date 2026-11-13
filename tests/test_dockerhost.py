@@ -162,6 +162,13 @@ class LiveServerTest(HostCase):
         with self.assertRaisesRegex(HostError, SAVED):
             self.host.stop_live()
 
+    def test_a_rollback_needs_only_a_stopped_container(self):
+        self.docker.stop_exit, self.docker.writes_saved = 255, False    # stopped in the middle of a boot
+        self.host.stop_live(clean=False)
+        self.assertFalse(self.docker.boxes["aeronautics"]["Running"])
+        with self.assertRaises(HostError):
+            self.host.stop_live()
+
     def test_done_from_an_earlier_start_is_not_evidence(self):
         self.host.stop_live()
         self.docker.boot_logs = "Loading mods...\n"          # this start never reaches Done; the old one did

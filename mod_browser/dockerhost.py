@@ -161,7 +161,7 @@ class DockerHost:
     def allow_joins(self) -> None:
         self.gate.allow()
 
-    def stop_live(self) -> None:
+    def stop_live(self, clean: bool = True) -> None:
         if self.sidecar and self._inspect(self.sidecar):
             self._docker("stop", "-t", "60", self.sidecar, timeout=120)
         info = self._inspect(self.live)
@@ -172,11 +172,13 @@ class DockerHost:
             began = time.time()
             self._docker("stop", "-t", str(self.stop_timeout), self.live, timeout=self.stop_timeout + 120)
             info = self._inspect(self.live) or {}
-            if log.is_file() and log.stat().st_mtime < began - 1:
+            if clean and log.is_file() and log.stat().st_mtime < began - 1:
                 raise HostError("the server log was not written during the stop")
         state = info.get("State", {})
-        if state.get("Running") or state.get("Status") != "exited":
+        if state.get("Running") or state.get("Status") not in ("exited", "created"):
             raise HostError(f"the container is {state.get('Status')}, not exited")
+        if not clean:
+            return
         if state.get("OOMKilled") or state.get("ExitCode") != 0:
             raise HostError(f"the server exited {state.get('ExitCode')} (OOM killed: {state.get('OOMKilled')}), not a clean stop")
         if not log.is_file() or SAVED not in log.read_text(errors="replace")[-200_000:]:
@@ -334,8 +336,22 @@ class DockerHost:
                 (self.data_dir / name).rename(keep / name)  # the failed world is kept, never deleted here
         self._tar(["--extract", "--gzip", "--same-owner", "--file", manifest["world"]["file"], "-C", str(self.data_dir)])
         self._tar(["--extract", "--gzip", "--same-owner", "--file", manifest["files"]["file"], "-C", str(self.data_dir)])
-        self._tar(["--compare", "--gzip", "--file", manifest["world"]["file"], "-C", str(self.data_dir)])
-        self._tar(["--compare", "--gzip", "--file", manifest["files"]["file"], "-C", str(self.data_dir)])
+        # The server runs as the data dir's owner: make sure of it rather than trusting the archive's ids.
+        for name in ("world", *manifest["files"]["members"]):
+            self._cmd(["chown", "-R", self._owner(), str(self.data_dir / name)], timeout=1800)
+        self._compare(manifest["world"]["file"])
+        self._compare(manifest["files"]["file"])
+
+    def _compare(self, archive: str) -> None:
+        """Every file of the archive is back with its content, size and times. Owner lines alone are not a
+        difference: ownership was set above (the Mac's file sharing ignores chown, seen in the dry run)."""
+        done = self._cmd(["tar", "--compare", "--gzip", "--file", archive, "-C", str(self.data_dir)], timeout=3600, check=False)
+        if done.returncode == 0:
+            return
+        lines = [ln for ln in (done.stdout + done.stderr).splitlines() if ln.strip()]
+        real = [ln for ln in lines if not ln.endswith(("Uid differs", "Gid differs"))]
+        if done.returncode != 1 or real or not lines:
+            raise HostError(f"the restored files differ from the backup: {' | '.join(real or lines)[-300:]}")
 
     def prune_backups(self, backup_dir: Path, keep: int) -> None:
         sets = sorted((p for p in backup_dir.glob("batch-*") if (p / "manifest.json").is_file()),
