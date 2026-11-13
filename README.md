@@ -92,14 +92,16 @@ or queued request with a fixed reason.
 |---|---|
 | `GET /queue`, `GET /api/requests` | anyone |
 | `POST /api/requests` `{name, source, id, version}` | anyone with a whitelisted name; JSON only, same origin |
-| `GET /admin`, `/admin/api/requests[/<id>/<action>]` | the owner: HTTP Basic, any user name, the vault password (20+ chars; a shorter or missing one leaves `/admin` a 404). 10 wrong guesses a minute lock it for a minute |
+| `GET /admin`, `/admin/api/requests[/<id>/<action>]` | the owner: HTTP Basic, any user name, the vault password (20+ chars; a shorter or missing one leaves `/admin` a 404). 10 wrong guesses a minute lock that client out for a minute |
 | `GET /admin-api/v1/requests?since=<seq>`, `POST /admin-api/v1/requests[/<id>/<action>]` | PVE, on the loopback listener only; no password, because only `docker exec` reaches it |
 
 Actions: `approve`, `deny {reason}`, `override {version}`, `remove`, `requeue`.
 `since` returns every request changed after that `seq`, so a poller never
 misses a change; the answer's `seq` is the next `since`.
 
-Limits: 30 asks a minute (everyone together), 20 wrong names a minute, 5 open
+Limits: 30 asks a minute (everyone together), 20 wrong names a minute per client
+(a client is Caddy's `X-Forwarded-For`, believed only from a private or
+loopback peer), 5 open
 requests per name, 200 open in all, bodies of 8 KiB. The queue is SQLite in
 `MOD_BROWSER_DATA_DIR`; without that directory, the whitelist file or browsing,
 requests are off and `/queue` and `/admin` are 404.

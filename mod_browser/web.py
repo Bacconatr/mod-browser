@@ -39,6 +39,7 @@ import base64
 import binascii
 import hmac
 import html
+import ipaddress
 import json
 import mimetypes
 import re
@@ -55,7 +56,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from .catalog import SOURCES, camel, default_version
 from .intake import Intake, Refused
-from .limits import RateLimiter
+from .limits import KeyedLimiter
 from .pack import PackCatalog, search
 from .ports import CatalogPort, InstalledPort, JarPort
 from .queue import InvalidTransition, NoSuchRequest, Queue
@@ -130,6 +131,19 @@ class Req:
     headers: Any
     body: bytes
     match: re.Match[str]
+    peer: str = ""
+
+    @property
+    def client(self) -> str:
+        """Who is asking, for rate limits. Caddy runs beside this app and sets X-Forwarded-For;
+        it is believed only when the connection itself comes from a private or loopback address,
+        so a direct caller cannot pick its own identity."""
+        forwarded = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
+        try:
+            local = ipaddress.ip_address(self.peer).is_private
+        except ValueError:
+            local = False
+        return forwarded[:64] if forwarded and local else self.peer
 
     def json(self) -> dict[str, Any]:
         if not self.body:
@@ -164,7 +178,7 @@ class App:
         self.requests = requests if browse is not None else None
         # An unset or short password leaves /admin shut (404), never open.
         self._admin_password = admin_password if admin_password and len(admin_password) >= MIN_ADMIN_PASSWORD else None
-        self._bad_logins = RateLimiter(10, 60.0)
+        self._bad_logins = KeyedLimiter(10, 60.0)
         pages = ("index.html", "add.html", "queue.html", "admin.html")
         self._page, self._add_page, self._queue_page, self._admin_page = (
             self._render(f, name, monitor.address, browse is not None, self.requests is not None) for f in pages)
@@ -297,7 +311,7 @@ class App:
         source, ident, version = (str(body.get(k) or "") for k in ("source", "id", "version"))
         if source not in SOURCES or not _ID.match(ident) or (version and not _ID.match(version)):
             raise Refused(400, "source and id are required")
-        made = self.requests.intake.submit(str(body.get("name") or ""), source, ident, version or None)
+        made = self.requests.intake.submit(str(body.get("name") or ""), source, ident, version or None, req.client)
         return _json({"request": made.public()}, 201)
 
     # ---- requests: the owner (same operations on /admin/api, behind the password, and on the loopback API) ----
@@ -348,10 +362,10 @@ class App:
         def guarded(req: Req) -> Response:
             if self._admin_password is None:
                 return _error(HTTPStatus.NOT_FOUND, "not found")
-            if self._bad_logins.full():
+            if self._bad_logins.full(req.client):
                 return _error(HTTPStatus.TOO_MANY_REQUESTS, "too many wrong passwords; wait a minute")
             if not self._password_ok(req):
-                self._bad_logins.record()
+                self._bad_logins.record(req.client)
                 status, kind, body, headers = _error(HTTPStatus.UNAUTHORIZED, "password required")
                 return status, kind, body, {**headers, "WWW-Authenticate": 'Basic realm="Tel Aviv admin", charset="UTF-8"'}
             return fn(req)
@@ -479,7 +493,7 @@ def _handler(routes: Callable[[], dict[str, Callable[..., Response]]], dynamic: 
                     if body is None:
                         return
                     try:
-                        response = fn(Req(method, url.path, parse_qs(url.query), self.headers, body, match))
+                        response = fn(Req(method, url.path, parse_qs(url.query), self.headers, body, match, self.client_address[0]))
                     except Exception:  # noqa: BLE001
                         sys.stderr.write(f"mod-browser: {url.path} failed\n{traceback.format_exc()}")
                         response = _error(HTTPStatus.SERVICE_UNAVAILABLE, "temporarily unavailable")

@@ -14,7 +14,7 @@ import re
 from typing import Any, Callable
 
 from .catalog import camel
-from .limits import RateLimiter
+from .limits import KeyedLimiter, RateLimiter
 from .queue import OPEN_STATES, Queue, Request
 from .resolver import Verdict
 
@@ -42,18 +42,19 @@ class Intake:
                  limiter: RateLimiter | None = None):
         self.queue, self._resolve, self.whitelist = queue, resolve, whitelist
         self.limiter = limiter or RateLimiter(30, 60.0)
-        # Wrong names are counted too: the name check must not become a way to probe the whitelist.
-        self.guesses = RateLimiter(20, 60.0)
+        # Wrong names are counted per client: the name check must not become a way to probe the
+        # whitelist, and one prober must not be able to lock the friends out.
+        self.guesses = KeyedLimiter(20, 60.0)
 
     # ---- friends ----
-    def submit(self, name: str, source: str, project_id: str, version_id: str | None) -> Request:
+    def submit(self, name: str, source: str, project_id: str, version_id: str | None, client: str = "") -> Request:
         if not isinstance(name, str) or not NAME.match(name):
             raise Refused(400, "That is not a Minecraft name.")
-        if self.guesses.full():
+        if self.guesses.full(client):
             raise Refused(429, "Too many wrong names; try again in a minute.")
         canonical = self.whitelist.canonical(name)
         if canonical is None:
-            self.guesses.record()
+            self.guesses.record(client)
             raise Refused(403, "That name is not on the whitelist. Ask the owner to add you first.")
         if not self.limiter.allow():
             raise Refused(429, "Too many requests right now; try again in a minute.")

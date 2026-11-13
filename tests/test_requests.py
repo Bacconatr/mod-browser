@@ -148,13 +148,16 @@ class AskTest(RequestsCase):
         self.assertEqual(code, 422)
         self.assertIn("author blocks downloads outside CurseForge", body["error"])
 
-    def test_guessing_names_is_cut_off_so_the_whitelist_cannot_be_probed(self):
+    def test_guessing_names_is_cut_off_per_client_so_the_whitelist_cannot_be_probed(self):
         self.start()
-        codes = [self.ask(name=f"Guess_{i:03d}")[0] for i in range(22)]
+        prober = {"X-Forwarded-For": "203.0.113.9"}
+        ask = lambda name, who: self.call("POST", self.public + "/api/requests",  # noqa: E731
+                                          {"name": name, "source": "modrinth", "id": CONNECTED[0], "version": CONNECTED[1]}, who)
+        codes = [ask(f"Guess_{i:03d}", prober)[0] for i in range(22)]
         self.assertEqual(codes[:20], [403] * 20)
         self.assertEqual(codes[20:], [429, 429])
-        # A real name is also held back until the window passes: the cost of the guard.
-        self.assertEqual(self.ask()[0], 429)
+        self.assertEqual(ask("Test_Player", prober)[0], 429)       # the prober is held back, even with a real name
+        self.assertEqual(ask("Test_Player", {"X-Forwarded-For": "198.51.100.7"})[0], 201)  # a friend is not
 
     def test_asking_is_rate_limited(self):
         self.start(limit=2)
@@ -261,11 +264,14 @@ class AdminAccessTest(RequestsCase):
         self.assertEqual(code, 200)
         self.assertIn("Tel Aviv", page)
 
-    def test_a_wrong_password_guessed_too_often_locks_the_door_for_a_minute(self):
+    def test_a_wrong_password_guessed_too_often_locks_that_client_out_for_a_minute_and_nobody_else(self):
         self.start()
+        noisy = {"X-Forwarded-For": "203.0.113.9"}
         for _ in range(10):
-            self.call("GET", self.public + "/admin", headers=self.owner("guess guess guess guess guess"))
-        self.assertEqual(self.call("GET", self.public + "/admin", headers=self.owner())[0], 429)
+            self.call("GET", self.public + "/admin", headers={**self.owner("guess guess guess guess guess"), **noisy})
+        self.assertEqual(self.call("GET", self.public + "/admin", headers={**self.owner(), **noisy})[0], 429)
+        # The owner, from another address, is not locked out by someone else's guessing.
+        self.assertEqual(self.call("GET", self.public + "/admin", headers={**self.owner(), "X-Forwarded-For": "198.51.100.7"})[0], 200)
 
     def test_without_a_long_enough_password_configured_admin_is_shut_not_open(self):
         for password in (None, "short"):
