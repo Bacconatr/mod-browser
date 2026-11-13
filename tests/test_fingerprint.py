@@ -15,9 +15,9 @@ from tests.test_requests import CONNECTED, RequestsCase
 
 
 def pve_fingerprint(raw):
-    """Copied verbatim from pve-mod-queue.py (Homelab #1759), the other side of the contract."""
+    """Copied verbatim from pve-mod-queue.py as merged (Homelab #1759), the other side of the contract."""
     decided = {k: raw.get(k) for k in ("requester", "ownerAdded", "mod", "dependencies", "versionId", "added", "kind")}
-    blob = json.dumps(decided, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    blob = json.dumps(decided, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8", "replace")).hexdigest()
 
 
