@@ -17,14 +17,22 @@ Public listener (behind Caddy, Internet-facing, no login):
   GET /api/requests the same as JSON; POST /api/requests {name, source, id, version?} asks
   GET /admin        the owner's page; every /admin route needs the vault password (401 without it)
   /admin/api/requests[...]   list, add, approve, deny, override, remove, requeue (JSON)
+  POST /admin/api/apply {mode}, /admin/api/apply/cancel, /admin/api/restart-now (= mode now)
 
 Admin listener (bound to loopback inside the container; nothing proxies it):
   GET  /admin-api/v1/health
   GET  /admin-api/v1/requests?since=<seq>     every request changed since a poll
   POST /admin-api/v1/requests                 add as the owner
   POST /admin-api/v1/requests/<id>/<action>   approve | deny | override | remove | requeue
-  POST /admin-api/v1/restart-now              apply what is queued without waiting (still test-boots and backs up)
-  POST /admin-api/v1/applier/resume           clear a halt after the owner has checked the server
+  POST /admin-api/v1/apply {mode}             the owner asks to apply what is queued: when-empty | now
+  POST /admin-api/v1/apply/cancel             withdraw that ask
+  GET  /admin-api/v1/maintenance              the maintenance runner's poll: asked for? queued? halted?
+  POST /admin-api/v1/maintenance/claim        the runner takes a batch (queued -> testing)
+  POST /admin-api/v1/maintenance/release      {batch, reason}: deferred before the server was touched (-> queued)
+  POST /admin-api/v1/maintenance/phase        {batch, phase, detail, state?}: what the status page says
+  POST /admin-api/v1/maintenance/finish       {batch, outcome, reason}: applied | test-failed | rolled-back, verified
+  POST /admin-api/v1/maintenance/halt         {reason}: the runner wants the owner; nothing more is claimed
+  POST /admin-api/v1/applier/resume           the runner's recovery verified the server: clear the halt
   GET  /admin-api/v1/upstream                 the daily upstream check: last result, any error (reported once a day)
   POST /admin-api/v1/upstream/check           check now
   PVE reaches it with `pct exec` + `docker exec`, so it needs no password and
@@ -60,6 +68,7 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from .catalog import SOURCES, camel, default_version
+from .applier import DeskRefused
 from .intake import Intake, Refused
 from .limits import KeyedLimiter
 from .pack import PackCatalog, search
@@ -414,20 +423,65 @@ class App:
             done = intake.requeue(request_id)
         return _json({"request": done.admin()})
 
-    def _restart_now(self, req: Req) -> Response:
-        self._same_origin(req)
+    # ---- applying: the owner asks, the maintenance runner (PVE, over pct exec) does the work ----
+    def _desk(self) -> Any:
         if self.applier is None or not self.applier.enabled:
             raise Refused(409, "The applier is switched off.")
-        if not self.requests.queue.queued():
-            raise Refused(409, "Nothing is queued.")
-        return _json({"apply": self.applier.request_restart_now()})
+        return self.applier
 
-    def _resume(self, req: Req) -> Response:
-        """Clear a halt once the owner has checked the server. Loopback only: a halt is never cleared from the Internet."""
-        self._same_origin(req)
-        if self.applier is None:
-            raise Refused(409, "The applier is switched off.")
-        return _json({"apply": self.applier.resume()})
+    def _desked(self, fn: Callable[[Req], Any], write: bool = True) -> Callable[[Req], Response]:
+        def run(req: Req) -> Response:
+            if write:
+                self._same_origin(req)
+            try:
+                return _json({"apply": fn(req)})
+            except DeskRefused as exc:
+                raise Refused(exc.status, exc.message) from exc
+        return run
+
+    def _apply(self, req: Req) -> Any:
+        return self._desk().request(str(req.json().get("mode") or "when-empty"))
+
+    def _restart_now(self, req: Req) -> Any:
+        return self._desk().request("now")
+
+    def _cancel(self, req: Req) -> Any:
+        return self._desk().cancel()
+
+    def _maintenance(self, req: Req) -> Any:
+        return self._desk().pending()
+
+    def _claim(self, req: Req) -> Any:
+        return self._desk().claim()
+
+    @staticmethod
+    def _batch_of(body: dict[str, Any]) -> int:
+        batch = body.get("batch")
+        if not isinstance(batch, int) or isinstance(batch, bool) or batch < 1:
+            raise Refused(400, "batch is required")
+        return batch
+
+    def _release(self, req: Req) -> Any:
+        body = req.json()
+        return self._desk().release(self._batch_of(body), str(body.get("reason") or ""))
+
+    def _phase(self, req: Req) -> Any:
+        body = req.json()
+        batch = self._batch_of(body) if body.get("batch") is not None else None
+        state = body.get("state")
+        return self._desk().phase(batch, str(body.get("phase") or ""), str(body.get("detail") or ""),
+                                  str(state) if state is not None else None)
+
+    def _finish(self, req: Req) -> Any:
+        body = req.json()
+        return self._desk().finish(self._batch_of(body), str(body.get("outcome") or ""), str(body.get("reason") or ""))
+
+    def _halt(self, req: Req) -> Any:
+        return self._desk().halt(str(req.json().get("reason") or ""))
+
+    def _resume(self, req: Req) -> Any:
+        """Loopback only: a halt is never cleared from the Internet."""
+        return self._desk().resume()
 
     def _upstream_status(self, req: Req) -> Response:
         return _json({"upstream": self.upstream.status() if self.upstream is not None else {"configured": False}})
@@ -541,7 +595,9 @@ class App:
             ("GET", root, guard(answer(self._owner_list))),
             ("POST", root, guard(answer(self._owner_add))),
             ("POST", act, guard(answer(self._owner_act))),
-            ("POST", re.compile(r"^/admin/api/restart-now$"), guard(answer(self._restart_now))),
+            ("POST", re.compile(r"^/admin/api/restart-now$"), guard(answer(self._desked(self._restart_now)))),
+            ("POST", re.compile(r"^/admin/api/apply$"), guard(answer(self._desked(self._apply)))),
+            ("POST", re.compile(r"^/admin/api/apply/cancel$"), guard(answer(self._desked(self._cancel)))),
             ("GET", re.compile(r"^/admin/api/upstream$"), guard(answer(self._upstream_status))),
             ("POST", re.compile(r"^/admin/api/upstream/check$"), guard(answer(self._upstream_check))),
         ]
@@ -555,8 +611,16 @@ class App:
             ("GET", re.compile(r"^/admin-api/v1/requests$"), answer(self._owner_list)),
             ("POST", re.compile(r"^/admin-api/v1/requests$"), answer(self._owner_add)),
             ("POST", re.compile(rf"^/admin-api/v1/requests/{_ROUTE_ID}/({'|'.join(ADMIN_ACTIONS)})$"), answer(self._owner_act)),
-            ("POST", re.compile(r"^/admin-api/v1/restart-now$"), answer(self._restart_now)),
-            ("POST", re.compile(r"^/admin-api/v1/applier/resume$"), answer(self._resume)),
+            ("POST", re.compile(r"^/admin-api/v1/restart-now$"), answer(self._desked(self._restart_now))),
+            ("POST", re.compile(r"^/admin-api/v1/apply$"), answer(self._desked(self._apply))),
+            ("POST", re.compile(r"^/admin-api/v1/apply/cancel$"), answer(self._desked(self._cancel))),
+            ("GET", re.compile(r"^/admin-api/v1/maintenance$"), answer(self._desked(self._maintenance, write=False))),
+            ("POST", re.compile(r"^/admin-api/v1/maintenance/claim$"), answer(self._desked(self._claim))),
+            ("POST", re.compile(r"^/admin-api/v1/maintenance/release$"), answer(self._desked(self._release))),
+            ("POST", re.compile(r"^/admin-api/v1/maintenance/phase$"), answer(self._desked(self._phase))),
+            ("POST", re.compile(r"^/admin-api/v1/maintenance/finish$"), answer(self._desked(self._finish))),
+            ("POST", re.compile(r"^/admin-api/v1/maintenance/halt$"), answer(self._desked(self._halt))),
+            ("POST", re.compile(r"^/admin-api/v1/applier/resume$"), answer(self._desked(self._resume))),
             ("GET", re.compile(r"^/admin-api/v1/upstream$"), answer(self._upstream_status)),
             ("POST", re.compile(r"^/admin-api/v1/upstream/check$"), answer(self._upstream_check)),
         ]

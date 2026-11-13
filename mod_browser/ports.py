@@ -80,23 +80,61 @@ class BootResult:
         self.ok, self.reason = ok, reason
 
 
-class HostPort(Protocol):
-    """What the applier needs from the machine the server runs on. No adapter is built yet:
-    restarting the live container and booting a throwaway one needs a way to reach Docker that
-    this app deliberately does not have (no socket). See README, "The applier"."""
+class HostError(Exception):
+    """A host step did not happen, or could not be verified to have happened."""
 
-    def test_boot(self, pack_dir: "Path", timeout: float) -> BootResult:
-        """Boot a throwaway container with the candidate pack against a COPY of the world.
 
-        ok means it reached Done with no new mod-sourced ERRORs against the live baseline.
-        Must return (not raise) after `timeout` seconds with ok=False.
-        """
+class MaintenanceHost(Protocol):
+    """Guest 120 as the maintenance runner drives it (`dockerhost.DockerHost`; `FakeHost` in the tests).
+    The app never holds one: it has no Docker socket. Every method that changes something verifies it
+    and raises HostError when it cannot."""
 
-    def backup_world(self) -> str:
-        """Take a world backup now and return its id. Raises if it could not."""
+    def players(self) -> int | None:
+        """How many are online; None when the server cannot say (down, booting, RCON silent)."""
 
-    def restart_live(self) -> None:
-        """Restart the live container (it pulls the pack from PACKWIZ_URL on start)."""
+    def running(self) -> bool:
+        """True while the live container runs, booted or not."""
 
-    def wait_live_done(self, timeout: float) -> BootResult:
-        """Wait for the live server to reach Done after `restart_live`."""
+    def say(self, text: str) -> bool:
+        """A message in game; False if it could not be sent."""
+
+    def preflight(self, stage_dir: Path) -> None:
+        """Room on disk for the stage, the backup and the test copy; the live container exists."""
+
+    def download(self, pack_dir: Path, stage_dir: Path) -> None:
+        """Fill a copy of the live mods/ for the candidate pack (packwiz-installer), live server untouched."""
+
+    def block_joins(self) -> None: ...
+
+    def allow_joins(self) -> None: ...
+
+    def stop_live(self) -> None:
+        """Graceful stop (and the backup sidecar). Returns only once the server exited having saved the world."""
+
+    def backup(self, dest: Path) -> dict:
+        """A cold backup of the world and server files, verified against the disk. Returns its manifest."""
+
+    def test_boot(self, pack_dir: Path, stage_dir: Path, manifest: dict, timeout: float) -> BootResult:
+        """The candidate against a disposable copy restored from `manifest`. Must return by `timeout`,
+        having killed the test container if it had to."""
+
+    def test_cleanup(self) -> bool:
+        """Remove the test container and its copy; True only when both are confirmed gone."""
+
+    def test_leftover(self) -> bool: ...
+
+    def promote_mods(self, stage_dir: Path) -> None:
+        """Put the downloaded mods in place of the live ones (the live server is stopped)."""
+
+    def restore(self, manifest: dict, aside: Path) -> None:
+        """Move the failed world and server files under `aside`, restore the backup, verify it."""
+
+    def start_live(self) -> str:
+        """Start the live server; return a token naming THIS start (its start time)."""
+
+    def wait_fresh_done(self, token: str, timeout: float) -> BootResult:
+        """ok once the start named by `token` logged Done and is still that start."""
+
+    def discard_stage(self, stage_dir: Path) -> None: ...
+
+    def prune_backups(self, backup_dir: Path, keep: int) -> None: ...

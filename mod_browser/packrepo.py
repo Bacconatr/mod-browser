@@ -196,6 +196,10 @@ class GitPackRepo:
     def head(self) -> str:
         return self._git("rev-parse", "HEAD").strip()
 
+    def tree(self, rev: str = "HEAD") -> str:
+        """The tree a commit holds: what "the matched pack" is compared by, whatever history says."""
+        return self._git("rev-parse", f"{rev}^{{tree}}").strip()
+
     def promote(self, staged: Staged) -> str:
         """Merge the candidate into the live tree. Returns the merge commit, the one to revert."""
         if self._git("status", "--porcelain").strip():

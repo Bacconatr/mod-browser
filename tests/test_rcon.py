@@ -103,10 +103,11 @@ class RconTest(unittest.TestCase):
                 self.server().rcon(command)
         self.assertEqual(self.fake.seen, [])
 
-    def test_a_plain_say_for_the_restart_countdown_is_allowed(self):
-        self.fake.replies["say The server restarts in 5 minutes to add new mods."] = [""]
-        self.server().rcon("say The server restarts in 5 minutes to add new mods.")
-        self.assertEqual(self.fake.seen, ["say The server restarts in 5 minutes to add new mods."])
+    def test_say_is_refused_too_the_runner_warns_players_itself(self):
+        with self.assertRaises(ValueError):
+            self.server().rcon("say The server restarts in 1 minute to add new mods.")
+        self.assertEqual(self.fake.seen, [])
+
 
     def test_container_is_running_only_when_its_name_resolves_inside_the_network(self):
         self.assertTrue(self.server(host="localhost").container_running())

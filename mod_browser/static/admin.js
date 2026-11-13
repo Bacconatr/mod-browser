@@ -116,14 +116,18 @@ async function load() {
   }
 }
 
-$("restart-now").addEventListener("click", async () => {
+async function apply(path, body) {
   try {
-    const data = await call("POST", "/admin/api/restart-now", {});
-    say(data.apply.detail || "Restart requested.");
+    const data = await call("POST", path, body);
+    say(data.apply.detail || "Asked.");
   } catch (error) {
     say(error.message);
   }
-});
+}
+
+$("apply-empty").addEventListener("click", () => apply("/admin/api/apply", { mode: "when-empty" }));
+$("restart-now").addEventListener("click", () => apply("/admin/api/apply", { mode: "now" }));
+$("apply-cancel").addEventListener("click", () => apply("/admin/api/apply/cancel", {}));
 
 $("upstream-check").addEventListener("click", async () => {
   try {

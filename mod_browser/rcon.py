@@ -17,7 +17,8 @@ first lines is the answer, and none in reach means unknown, never midnight.
 
 RCON commands are allowlisted. The app holds the RCON password, which can
 run any console command, so the adapter itself refuses everything but the
-read-only commands the page needs. A later ticket adds `say` for countdowns.
+read-only commands the page needs. In-game warnings before a restart are the maintenance
+runner's, sent with `rcon-cli` on the guest, never from this Internet-facing app.
 """
 
 from __future__ import annotations
@@ -35,8 +36,6 @@ from zoneinfo import ZoneInfo
 from .ports import ServerUnavailable
 
 ALLOWED_COMMANDS = frozenset({"list", "neoforge tps"})
-# In-game countdowns before a restart: `say` and plain words only, never a selector or a command-looking tail.
-SAY = re.compile(r"say [A-Za-z0-9 .,:!()'-]{1,200}")
 
 _LOGIN, _COMMAND = 3, 2
 # The whole reply to one command, across all its packets. `list` with 10
@@ -149,7 +148,7 @@ class RconServer:
         return any(ipaddress.ip_address(info[4][0]) in self.container_net for info in infos)
 
     def rcon(self, command: str) -> str:
-        if command not in ALLOWED_COMMANDS and not SAY.fullmatch(command):
+        if command not in ALLOWED_COMMANDS:
             raise ValueError(f"RCON command not allowed: {command!r}")
         try:
             password = self.password_file.read_text().strip()
