@@ -57,6 +57,30 @@ class FetchHttp:
         finally:
             body.close()
 
+    def post_json(self, url: str, body: Any, headers: dict[str, str] | None = None) -> Any:
+        """POST a JSON body to an allow-listed host (no redirects are followed for a POST) and parse the answer."""
+        payload = json.dumps(body).encode()
+        scheme, host, port, path = self._check(url)
+        conn = self._connect(scheme, host, port, self.timeout)
+        try:
+            conn.request("POST", path, body=payload, headers={
+                "User-Agent": USER_AGENT, "Accept-Encoding": "identity", "Content-Type": "application/json",
+                "Accept": "application/json", **(headers or {})})
+            response = conn.getresponse()
+            if response.status != 200:
+                raise FetchError(f"{host} answered {response.status}")
+            data = self._read(response, self.max_json, time.monotonic() + self.timeout)
+            try:
+                return json.loads(data.read().decode("utf-8"))
+            except ValueError as exc:
+                raise FetchError("the answer was not JSON") from exc
+            finally:
+                data.close()
+        except (OSError, http.client.HTTPException) as exc:
+            raise FetchError(f"{host}: {exc}") from exc
+        finally:
+            conn.close()
+
     def fetch_jar(self, url: str) -> IO[bytes]:
         """The body as a seekable file (in memory up to 8 MiB, on disk past that). Caller closes it."""
         return self._get(url, {}, self.max_jar, self.jar_timeout)
@@ -151,3 +175,6 @@ class CachingHttp:
 
     def fetch_jar(self, url: str) -> IO[bytes]:
         return self.inner.fetch_jar(url)
+
+    def post_json(self, url: str, body: Any, headers: dict[str, str] | None = None) -> Any:
+        return self.inner.post_json(url, body, headers)  # a POST is never remembered

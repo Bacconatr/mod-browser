@@ -54,6 +54,10 @@ class Request:
     note: str | None
     created_at: str
     updated_at: str
+    #: "mod" (a friend's ask or the owner's own) or "upstream" (a new All of Create: Aeronautics release).
+    kind: str = "mod"
+    #: Kind-specific data: for "upstream", the pack commit the difference was computed against, and the difference.
+    meta: dict[str, Any] | None = None
 
     def public(self) -> dict[str, Any]:
         """What the public page may show: no version ids, no notes."""
@@ -72,7 +76,7 @@ class Request:
 
     def admin(self) -> dict[str, Any]:
         return {**self.public(), "seq": self.seq, "note": self.note, "versionId": self.version_id,
-                "added": self.added}
+                "added": self.added, "kind": self.kind, "meta": self.meta}
 
 
 _SCHEMA = """
@@ -93,9 +97,12 @@ CREATE TABLE IF NOT EXISTS requests (
   reason TEXT,
   note TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'mod',
+  meta TEXT
 );
 CREATE INDEX IF NOT EXISTS requests_seq ON requests (seq);
+CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
 
@@ -110,6 +117,11 @@ class Queue:
         self._db = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_SCHEMA)
+        have = {r["name"] for r in self._db.execute("PRAGMA table_info(requests)")}
+        if "kind" not in have:  # a queue made before upstream updates
+            self._db.execute("ALTER TABLE requests ADD COLUMN kind TEXT NOT NULL DEFAULT 'mod'")
+        if "meta" not in have:
+            self._db.execute("ALTER TABLE requests ADD COLUMN meta TEXT")
 
     # ---- reads ----
     def _row(self, row: sqlite3.Row) -> Request:
@@ -117,7 +129,8 @@ class Queue:
                        source=row["source"], project_id=row["project_id"], version_id=row["version_id"],
                        mod_name=row["mod_name"], version_number=row["version_number"], channel=row["channel"],
                        side=row["side"], added=json.loads(row["added"]), state=row["state"], reason=row["reason"],
-                       note=row["note"], created_at=row["created_at"], updated_at=row["updated_at"])
+                       note=row["note"], created_at=row["created_at"], updated_at=row["updated_at"],
+                       kind=row["kind"], meta=json.loads(row["meta"]) if row["meta"] else None)
 
     def get(self, request_id: int) -> Request:
         with self._lock:
@@ -164,6 +177,33 @@ class Queue:
                  added[0]["versionId"], added[0]["name"], added[0]["versionNumber"], added[0]["channel"],
                  snapshot.get("side", "unknown"), json.dumps(added), "pending", now, now))
             return self.get(cur.lastrowid)
+
+    def create_upstream(self, project_id: str, file_id: str, title: str, version: str, ops: list[dict[str, Any]],
+                        meta: dict[str, Any]) -> Request:
+        """An owner-only request: a new upstream release as a list of pack operations (add, change, remove)."""
+        with self._lock:
+            now = self._clock()
+            cur = self._db.execute(
+                "INSERT INTO requests (seq, requester, owner_added, source, project_id, version_id, mod_name, version_number,"
+                " channel, side, added, state, created_at, updated_at, kind, meta) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (self._next_seq(), "Upstream", 1, "curseforge", project_id, file_id, title, version, "release", "both",
+                 json.dumps(ops), "pending", now, now, "upstream", json.dumps(meta)))
+            return self.get(cur.lastrowid)
+
+    def kv_get(self, key: str) -> str | None:
+        with self._lock:
+            row = self._db.execute("SELECT value FROM kv WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def kv_set(self, key: str, value: str) -> None:
+        with self._lock:
+            self._db.execute("INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                             (key, value))
+
+    def of_kind(self, kind: str) -> list[Request]:
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM requests WHERE kind = ? ORDER BY id", (kind,)).fetchall()
+        return [self._row(r) for r in rows]
 
     def _change(self, request_id: int, allowed: tuple[str, ...], state: str, **fields: Any) -> Request:
         with self._lock:
