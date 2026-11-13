@@ -243,3 +243,8 @@ select { appearance: auto; }
 #verdict { margin-top: 1rem; }
 #verdict[data-status="ok"] > h3:first-child { color: var(--ok); }
 #verdict[data-status="refused"] > h3:first-child, #verdict[data-status="unavailable"] > h3:first-child { color: var(--copper); }
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; align-items: center; }
+.actions .button { background: var(--ground); color: var(--ink); border-color: var(--line); }
+.actions input[type="search"] { padding-left: 0.75rem; min-width: 12rem; }
+.request-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: end; margin-top: 1rem; }
+.request-form .field { flex: 1 1 14rem; }

@@ -106,7 +106,7 @@ function renderPanel(project, data) {
     const chosen = data.default && select.value === data.default.id ? "" : `&version=${encodeURIComponent(select.value)}`;
     show(el("div", { id: "verdict", "aria-live": "polite" }, [el("p", { class: "muted", text: "Checking it against the pack…" })]));
     try {
-      show(renderVerdict(await api(`/api/catalog/resolve?source=${project.source}&id=${encodeURIComponent(project.id)}${chosen}`)));
+      show(renderVerdict(project, await api(`/api/catalog/resolve?source=${project.source}&id=${encodeURIComponent(project.id)}${chosen}`)));
     } catch (error) {
       show(el("div", { id: "verdict", "aria-live": "polite" }, [el("p", { class: "problem", text: error.message })]));
     }
@@ -121,7 +121,7 @@ function renderPanel(project, data) {
   run();
 }
 
-function renderVerdict(v) {
+function renderVerdict(project, v) {
   const heads = { ok: "This can be added.", "already-installed": "Already on the server.", refused: "This cannot be added.", unavailable: "This cannot be added." };
   const box = el("div", { id: "verdict", "aria-live": "polite", "data-status": v.status }, [el("h3", { text: heads[v.status] || v.status })]);
   if (v.version && v.version.fallback === "beta") {
@@ -148,7 +148,51 @@ function renderVerdict(v) {
     for (const p of v.problems) list.append(el("li", { text: p.message }));
     box.append(list);
   }
+  if (v.status === "ok" && requestsEnabled()) box.append(requestForm(project, v));
   return box;
+}
+
+const requestsEnabled = () => {
+  const meta = document.querySelector('meta[name="requests-enabled"]');
+  return !!meta && meta.content === "true";
+};
+
+// The name is remembered in this browser only, as a convenience.
+const savedName = () => { try { return localStorage.getItem("mc-name") || ""; } catch { return ""; } };
+const saveName = (name) => { try { localStorage.setItem("mc-name", name); } catch { /* private window */ } };
+
+function requestForm(project, v) {
+  const input = el("input", { id: "mc-name", type: "text", maxlength: "16", autocomplete: "off", spellcheck: "false", placeholder: "Your Minecraft name", value: savedName() });
+  const go = el("button", { type: "submit", class: "button solid", text: "Ask for it" });
+  const status = el("p", { class: "muted", role: "status", "aria-live": "polite" });
+  const form = el("form", { class: "request-form" }, [
+    el("div", { class: "field" }, [el("label", { for: "mc-name", text: "Your Minecraft name (it must be on the whitelist)" }), input]),
+    go,
+  ]);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    go.disabled = true;
+    status.className = "muted";
+    status.textContent = "Sending…";
+    try {
+      const response = await fetch("/api/requests", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ name: input.value.trim(), source: project.source, id: project.id, version: v.version.id }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `The server answered ${response.status}.`);
+      saveName(input.value.trim());
+      status.textContent = `Asked. It is ${data.request.state} until the owner decides. See it in the queue.`;
+      form.replaceChildren(status, el("a", { href: "/queue", text: "Open the queue" }));
+    } catch (error) {
+      status.className = "problem";
+      status.textContent = error.message;
+      go.disabled = false;
+    }
+  });
+  form.append(status);
+  return form;
 }
 
 $("find").addEventListener("submit", (event) => {

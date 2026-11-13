@@ -62,3 +62,11 @@ class JarPort(Protocol):
 class InstalledPort(Protocol):
     def mods(self) -> list[InstalledMod]:
         """Every mod the server has installed, read from its mods directory."""
+
+
+class WhitelistPort(Protocol):
+    def canonical(self, name: str) -> str | None:
+        """The whitelist's spelling of a Minecraft name, or None when it is not on the list.
+
+        There is deliberately no way to list the whitelist.
+        """

@@ -11,11 +11,14 @@ from pathlib import Path
 from .curseforge import CurseForgeCatalog
 from .modrinth import ModrinthCatalog
 from .net import CachingHttp, FetchHttp
+from .intake import Intake
 from .pack import PackCatalog
+from .queue import Queue
+from .whitelist import FileWhitelist
 from .rcon import RconServer
 from .status import StatusMonitor
 from .sources import CompositeCatalog, DirInstalled, HttpJars
-from .web import App, Browse, Servers
+from .web import App, Browse, Requests, Servers
 
 
 def env(name: str, default: str) -> str:
@@ -38,6 +41,21 @@ def browse_from_env() -> Browse | None:
     return Browse(catalog=catalog, jars=HttpJars(http), installed=DirInstalled(mods_dir))
 
 
+def requests_from_env(browse: Browse | None) -> Requests | None:
+    """Requests need browsing, a writable data directory and the server's whitelist; else they are off."""
+    data_dir = Path(env("DATA_DIR", "/srv/data"))
+    whitelist = Path(env("WHITELIST_FILE", "/srv/whitelist.json"))
+    if browse is None or not data_dir.is_dir() or not whitelist.is_file():
+        return None
+    queue = Queue(data_dir / "requests.db")
+    return Requests(queue=queue, intake=Intake(queue, browse.resolve, FileWhitelist(whitelist)))
+
+
+def admin_password_from_env() -> str | None:
+    path = Path(env("ADMIN_PASSWORD_FILE", "/run/secrets/aeronautics/admin"))
+    return path.read_text().strip() if path.is_file() else None
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="mod-browser: %(levelname)s %(message)s")
     server = RconServer(
@@ -51,7 +69,9 @@ def main() -> None:
     monitor = StatusMonitor(server, address=env("SERVER_ADDRESS", "play.example.com"),
                             max_age=float(env("STATUS_MAX_AGE", "10")))
     catalog = PackCatalog(Path(env("PACK_DIR", "/srv/pack")))
-    app = App(monitor, catalog, name=env("SERVER_NAME", "Tel Aviv"), browse=browse_from_env())
+    browse = browse_from_env()
+    app = App(monitor, catalog, name=env("SERVER_NAME", "Tel Aviv"), browse=browse,
+              requests=requests_from_env(browse), admin_password=admin_password_from_env())
     servers = Servers(
         app,
         public=(env("LISTEN_HOST", "0.0.0.0"), int(env("LISTEN_PORT", "8080"))),

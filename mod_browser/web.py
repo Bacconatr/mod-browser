@@ -13,34 +13,40 @@ Public listener (behind Caddy, Internet-facing, no login):
   GET /api/catalog/versions?source=&id= the versions for NeoForge 1.21.1 and the default
   GET /api/catalog/resolve?source=&id=&version=   what adding it would do
 
+  GET /queue        what friends asked for, by whom, and where each stands
+  GET /api/requests the same as JSON; POST /api/requests {name, source, id, version?} asks
+  GET /admin        the owner's page; every /admin route needs the vault password (401 without it)
+  /admin/api/requests[...]   list, add, approve, deny, override, remove, requeue (JSON)
+
 Admin listener (bound to loopback inside the container; nothing proxies it):
-  GET /admin-api/v1/health
+  GET  /admin-api/v1/health
+  GET  /admin-api/v1/requests?since=<seq>     every request changed since a poll
+  POST /admin-api/v1/requests                 add as the owner
+  POST /admin-api/v1/requests/<id>/<action>   approve | deny | override | remove | requeue
+  PVE reaches it with `pct exec` + `docker exec`, so it needs no password and
+  must never be published or proxied.
 
-Seams for the next tickets, deliberately not built yet:
-  - The request queue: POST /api/requests and GET /api/requests go in
-    PUBLIC_ROUTES once Queue exists. Requests carry only a Minecraft name.
-  - /admin: the owner's page, on the public listener behind the vault
-    password. Until then /admin is a plain 404 like any unknown path.
-  - The admin API: PVE polls ADMIN_ROUTES through `pct exec` + `docker exec`
-    for new requests and queue changes. It is never published or proxied,
-    so it is the one place a write endpoint may go without a password.
-
-Only GET and HEAD are served today; anything else is 405. A request that
-carries a body (which no route reads) closes its connection after the
-answer, so the unread body can never be parsed as the next request on a
-connection Caddy reuses.
+Writes are POST with a JSON body of at most 8 KiB, `Content-Type:
+application/json` (which a cross-site form cannot send without a preflight we
+never answer), and, when the browser names an Origin, the same origin as the
+Host. A body no route reads closes its connection after the answer, so it can
+never be parsed as the next request on a connection Caddy reuses.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hmac
 import html
+import ipaddress
 import json
 import mimetypes
 import re
 import sys
 import threading
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -49,9 +55,12 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, urlsplit
 
 from .catalog import SOURCES, camel, default_version
+from .intake import Intake, Refused
+from .limits import KeyedLimiter
 from .pack import PackCatalog, search
 from .ports import CatalogPort, InstalledPort, JarPort
-from .resolver import NotFound, resolve
+from .queue import InvalidTransition, NoSuchRequest, Queue
+from .resolver import Busy, NotFound, Verdict, resolve
 from .status import StatusMonitor
 
 STATIC = Path(__file__).parent / "static"
@@ -59,12 +68,18 @@ _MAX_QUERY = 200
 _ID = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 # Resolving can download jars from a CDN, so only a few may run at once.
 MAX_RESOLVES = 3
+MIN_ADMIN_PASSWORD = 20
 # Connections served at once per listener. Caddy keeps a small pool of
 # upstream connections; anything past this is closed at once rather than
 # given a thread, so a burst cannot exhaust the container's pids limit.
 MAX_CONNECTIONS = 48
 # Seconds a connection may sit idle or half-sent before it is dropped.
 SOCKET_TIMEOUT = 15
+
+# A request body is a small JSON object: a name, a mod id, a version id, a reason.
+MAX_BODY = 8 * 1024
+_ROUTE_ID = r"(\d{1,9})"
+ADMIN_ACTIONS = ("approve", "deny", "override", "remove", "requeue")
 
 SECURITY_HEADERS = {
     "Content-Security-Policy": (
@@ -81,11 +96,68 @@ Response = tuple[int, str, bytes, dict[str, str]]
 
 @dataclass
 class Browse:
-    """The three ports the catalog routes read through."""
+    """The three ports the catalog routes read through, and the cap on concurrent resolves."""
 
     catalog: CatalogPort
     jars: JarPort
     installed: InstalledPort
+    _gate: threading.BoundedSemaphore = field(default_factory=lambda: threading.BoundedSemaphore(MAX_RESOLVES))
+
+    def resolve(self, source: str, project_id: str, version_id: str | None) -> Verdict:
+        """Raises Busy when MAX_RESOLVES are already running."""
+        if not self._gate.acquire(blocking=False):
+            raise Busy()
+        try:
+            return resolve(self.catalog, self.jars, self.installed, source, project_id, version_id)
+        finally:
+            self._gate.release()
+
+
+@dataclass
+class Requests:
+    """The request queue and the rules that move it."""
+
+    queue: Queue
+    intake: Intake
+
+
+@dataclass
+class Req:
+    """One request to a dynamic route."""
+
+    method: str
+    path: str
+    query: dict[str, list[str]]
+    headers: Any
+    body: bytes
+    match: re.Match[str]
+    peer: str = ""
+
+    @property
+    def client(self) -> str:
+        """Who is asking, for rate limits. Caddy runs beside this app and sets X-Forwarded-For;
+        it is believed only when the connection itself comes from a private or loopback address,
+        so a direct caller cannot pick its own identity."""
+        forwarded = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
+        try:
+            local = ipaddress.ip_address(self.peer).is_private
+        except ValueError:
+            local = False
+        return forwarded[:64] if forwarded and local else self.peer
+
+    def json(self) -> dict[str, Any]:
+        if not self.body:
+            return {}
+        try:
+            data = json.loads(self.body)
+        except ValueError as exc:
+            raise Refused(400, "The body is not JSON.") from exc
+        if not isinstance(data, dict):
+            raise Refused(400, "The body must be a JSON object.")
+        return data
+
+
+DynamicRoute = tuple[str, "re.Pattern[str]", Callable[[Req], "Response"]]
 
 
 def _json(body: Any, status: int = 200) -> Response:
@@ -100,17 +172,27 @@ class App:
     """The routes, with the ports wired in. Tests build one with fakes."""
 
     def __init__(self, monitor: StatusMonitor, catalog: PackCatalog, name: str = "Tel Aviv",
-                 browse: "Browse | None" = None):
+                 browse: "Browse | None" = None, requests: "Requests | None" = None,
+                 admin_password: str | None = None):
         self.monitor, self.catalog, self.name, self.browse = monitor, catalog, name, browse
-        self._page, self._add_page = (self._render(f, name, monitor.address, browse is not None)
-                                      for f in ("index.html", "add.html"))
-        self._resolving = threading.BoundedSemaphore(MAX_RESOLVES)
+        self.requests = requests if browse is not None else None
+        # An unset or short password leaves /admin shut (404), never open.
+        self._admin_password = admin_password if admin_password and len(admin_password) >= MIN_ADMIN_PASSWORD else None
+        self._bad_logins = KeyedLimiter(10, 60.0)
+        pages = ("index.html", "add.html", "queue.html", "admin.html")
+        self._page, self._add_page, self._queue_page, self._admin_page = (
+            self._render(f, name, monitor.address, browse is not None, self.requests is not None) for f in pages)
         self._mods_json: tuple[str, bytes] | None = None
 
     @staticmethod
-    def _render(filename: str, name: str, address: str, browsing: bool) -> bytes:
+    def _render(filename: str, name: str, address: str, browsing: bool, queueing: bool = False) -> bytes:
         text = (STATIC / filename).read_text()
-        text = text.replace("{{addlink}}", '<p><a href="/add">Looking for a mod that is not in the pack? Find one.</a></p>' if browsing else "")
+        links = ""
+        if browsing:
+            links += '<p><a href="/add">Looking for a mod that is not in the pack? Find one.</a>'
+            links += ' <a href="/queue">See what friends have asked for.</a></p>' if queueing else "</p>"
+        text = text.replace("{{addlink}}", links)
+        text = text.replace("{{requesting}}", "true" if queueing else "false")
         for key, value in {"name": name, "address": address}.items():
             text = text.replace("{{" + key + "}}", html.escape(value))
         return text.encode()
@@ -184,15 +266,139 @@ class App:
         version = (query.get("version") or [None])[0]
         if version is not None and not _ID.match(version):
             return _error(HTTPStatus.BAD_REQUEST, "bad version")
-        if not self._resolving.acquire(blocking=False):
-            return _error(HTTPStatus.TOO_MANY_REQUESTS, "busy, try again in a moment")
         try:
-            b = self.browse
-            return _json(camel(resolve(b.catalog, b.jars, b.installed, *want, version)))
+            return _json(camel(self.browse.resolve(*want, version)))
+        except Busy:
+            return _error(HTTPStatus.TOO_MANY_REQUESTS, "busy, try again in a moment")
         except Exception as exc:  # noqa: BLE001
             return self._failed(exc)
-        finally:
-            self._resolving.release()
+
+    # ---- requests: friends ----
+    def _page_of(self, body: bytes) -> Callable[[Req], Response]:
+        return lambda req: (200, "text/html; charset=utf-8", body, {"Cache-Control": "no-cache"})
+
+    def _same_origin(self, req: Req) -> None:
+        """A write must be JSON from this site: a form on another site can send neither."""
+        if not (req.headers.get("Content-Type") or "").lower().startswith("application/json"):
+            raise Refused(415, "Send JSON.")
+        origin, host = req.headers.get("Origin"), req.headers.get("Host")
+        if origin and host and urlsplit(origin).netloc != host:
+            raise Refused(403, "Cross-site writes are refused.")
+
+    def _answering(self, fn: Callable[[Req], Response]) -> Callable[[Req], Response]:
+        """Turns the domain's refusals into answers, and an unexpected failure into a 503."""
+        def run(req: Req) -> Response:
+            try:
+                return fn(req)
+            except Refused as r:
+                return _json({"error": r.message, **r.details}, r.status)
+            except InvalidTransition as exc:
+                return _error(HTTPStatus.CONFLICT, str(exc))
+            except NoSuchRequest:
+                return _error(HTTPStatus.NOT_FOUND, "no such request")
+            except Busy:
+                return _error(HTTPStatus.TOO_MANY_REQUESTS, "busy, try again in a moment")
+            except NotFound as exc:
+                return _error(HTTPStatus.NOT_FOUND, str(exc))
+        return run
+
+    def list_public(self, req: Req) -> Response:
+        return _json({"requests": [r.public() for r in reversed(self.requests.queue.all())]})
+
+    def submit(self, req: Req) -> Response:
+        self._same_origin(req)
+        body = req.json()
+        source, ident, version = (str(body.get(k) or "") for k in ("source", "id", "version"))
+        if source not in SOURCES or not _ID.match(ident) or (version and not _ID.match(version)):
+            raise Refused(400, "source and id are required")
+        made = self.requests.intake.submit(str(body.get("name") or ""), source, ident, version or None, req.client)
+        return _json({"request": made.public()}, 201)
+
+    # ---- requests: the owner (same operations on /admin/api, behind the password, and on the loopback API) ----
+    def _owner_list(self, req: Req) -> Response:
+        raw = (req.query.get("since") or ["0"])[0]
+        since = int(raw) if raw.isdigit() else 0
+        found = self.requests.queue.all(since)
+        return _json({"requests": [r.admin() for r in found], "seq": max((r.seq for r in found), default=since)})
+
+    def _owner_add(self, req: Req) -> Response:
+        self._same_origin(req)
+        body = req.json()
+        source, ident, version = (str(body.get(k) or "") for k in ("source", "id", "version"))
+        if source not in SOURCES or not _ID.match(ident) or (version and not _ID.match(version)):
+            raise Refused(400, "source and id are required")
+        return _json({"request": self.requests.intake.add_directly(source, ident, version or None).admin()}, 201)
+
+    def _owner_act(self, req: Req) -> Response:
+        self._same_origin(req)
+        request_id, action = int(req.match.group(1)), req.match.group(2)
+        intake, body = self.requests.intake, req.json()
+        if action == "approve":
+            done = intake.approve(request_id)
+        elif action == "deny":
+            done = intake.deny(request_id, str(body.get("reason") or ""))
+        elif action == "override":
+            version = str(body.get("version") or "")
+            if not _ID.match(version):
+                raise Refused(400, "version is required")
+            done = intake.override(request_id, version)
+        elif action == "remove":
+            done = intake.remove(request_id)
+        else:
+            done = intake.requeue(request_id)
+        return _json({"request": done.admin()})
+
+    def _password_ok(self, req: Req) -> bool:
+        header = req.headers.get("Authorization") or ""
+        if not header.startswith("Basic "):
+            return False
+        try:
+            _, _, given = base64.b64decode(header[6:], validate=True).decode("utf-8").partition(":")
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            return False
+        return hmac.compare_digest(given.encode(), self._admin_password.encode())
+
+    def _behind_password(self, fn: Callable[[Req], Response]) -> Callable[[Req], Response]:
+        def guarded(req: Req) -> Response:
+            if self._admin_password is None:
+                return _error(HTTPStatus.NOT_FOUND, "not found")
+            if self._bad_logins.full(req.client):
+                return _error(HTTPStatus.TOO_MANY_REQUESTS, "too many wrong passwords; wait a minute")
+            if not self._password_ok(req):
+                self._bad_logins.record(req.client)
+                status, kind, body, headers = _error(HTTPStatus.UNAUTHORIZED, "password required")
+                return status, kind, body, {**headers, "WWW-Authenticate": 'Basic realm="Tel Aviv admin", charset="UTF-8"'}
+            return fn(req)
+        return guarded
+
+    @property
+    def public_dynamic(self) -> list[DynamicRoute]:
+        if self.requests is None:
+            return []
+        answer = self._answering
+        root = re.compile(r"^/admin/api/requests$")
+        act = re.compile(rf"^/admin/api/requests/{_ROUTE_ID}/({'|'.join(ADMIN_ACTIONS)})$")
+        guard = self._behind_password
+        return [
+            ("GET", re.compile(r"^/queue$"), self._page_of(self._queue_page)),
+            ("GET", re.compile(r"^/api/requests$"), answer(self.list_public)),
+            ("POST", re.compile(r"^/api/requests$"), answer(self.submit)),
+            ("GET", re.compile(r"^/admin$"), guard(self._page_of(self._admin_page))),
+            ("GET", root, guard(answer(self._owner_list))),
+            ("POST", root, guard(answer(self._owner_add))),
+            ("POST", act, guard(answer(self._owner_act))),
+        ]
+
+    @property
+    def admin_dynamic(self) -> list[DynamicRoute]:
+        if self.requests is None:
+            return []
+        answer = self._answering
+        return [
+            ("GET", re.compile(r"^/admin-api/v1/requests$"), answer(self._owner_list)),
+            ("POST", re.compile(r"^/admin-api/v1/requests$"), answer(self._owner_add)),
+            ("POST", re.compile(rf"^/admin-api/v1/requests/{_ROUTE_ID}/({'|'.join(ADMIN_ACTIONS)})$"), answer(self._owner_act)),
+        ]
 
     @property
     def public_routes(self) -> dict[str, Callable[[dict[str, list[str]]], Response]]:
@@ -230,7 +436,8 @@ def _static(path: str) -> Response | None:
     return 200, kind, target.read_bytes(), {"Cache-Control": "public, max-age=300"}
 
 
-def _handler(routes: Callable[[], dict[str, Callable[..., Response]]], serve_static: bool):
+def _handler(routes: Callable[[], dict[str, Callable[..., Response]]], dynamic: Callable[[], list[DynamicRoute]],
+             serve_static: bool):
     class Handler(BaseHTTPRequestHandler):
         server_version = "mod-browser"
         sys_version = ""
@@ -262,8 +469,39 @@ def _handler(routes: Callable[[], dict[str, Callable[..., Response]]], serve_sta
             if not head:
                 self.wfile.write(body)
 
-        def _dispatch(self, head: bool) -> None:
+        def _body(self) -> bytes | None:
+            """The request body, or None after answering 411/413 (the connection is then closed)."""
+            length = self.headers.get("Content-Length", "")
+            if "Transfer-Encoding" in self.headers or not length.isdigit():
+                if length == "" and "Transfer-Encoding" not in self.headers:
+                    return b""
+                self.close_connection = True
+                self._respond(_error(HTTPStatus.LENGTH_REQUIRED, "send a Content-Length"), head=False)
+                return None
+            if int(length) > MAX_BODY:
+                self.close_connection = True
+                self._respond(_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "body too large"), head=False)
+                return None
+            return self.rfile.read(int(length))
+
+        def _dispatch(self, head: bool, method: str = "GET") -> None:
             url = urlsplit(self.path)
+            for verb, pattern, fn in dynamic():
+                match = pattern.match(url.path)
+                if verb == method and match:
+                    body = self._body()
+                    if body is None:
+                        return
+                    try:
+                        response = fn(Req(method, url.path, parse_qs(url.query), self.headers, body, match, self.client_address[0]))
+                    except Exception:  # noqa: BLE001
+                        sys.stderr.write(f"mod-browser: {url.path} failed\n{traceback.format_exc()}")
+                        response = _error(HTTPStatus.SERVICE_UNAVAILABLE, "temporarily unavailable")
+                    self._respond(response, head)
+                    return
+            if method not in ("GET", "HEAD"):
+                self._refuse()
+                return
             route = routes().get(url.path)
             try:
                 if route:
@@ -281,13 +519,19 @@ def _handler(routes: Callable[[], dict[str, Callable[..., Response]]], serve_sta
         def do_HEAD(self) -> None:
             self._dispatch(head=True)
 
+        def do_POST(self) -> None:
+            self._dispatch(head=False, method="POST")
+
         def _refuse(self) -> None:
             # The body is never read, so the connection must not be reused.
             self.close_connection = True
             self._respond(_error(HTTPStatus.METHOD_NOT_ALLOWED, "method not allowed"), head=False,
                           extra={"Allow": "GET, HEAD"})
 
-        do_POST = do_PUT = do_PATCH = do_DELETE = do_OPTIONS = _refuse
+        def do_PUT(self) -> None:
+            self._refuse()
+
+        do_PATCH = do_DELETE = do_OPTIONS = do_PUT
 
     return Handler
 
@@ -318,8 +562,8 @@ class Servers:
     """Both listeners, each on its own thread."""
 
     def __init__(self, app: App, public: tuple[str, int], admin: tuple[str, int]):
-        self.public = _BoundedServer(public, _handler(lambda: app.public_routes, serve_static=True))
-        self.admin = _BoundedServer(admin, _handler(lambda: app.admin_routes, serve_static=False))
+        self.public = _BoundedServer(public, _handler(lambda: app.public_routes, lambda: app.public_dynamic, serve_static=True))
+        self.admin = _BoundedServer(admin, _handler(lambda: app.admin_routes, lambda: app.admin_dynamic, serve_static=False))
         self._threads = [threading.Thread(target=s.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True)
                          for s in (self.public, self.admin)]
 

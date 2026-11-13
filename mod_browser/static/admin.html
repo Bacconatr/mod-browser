@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="robots" content="noindex">
+<title>Admin · {{name}}</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23d6a93f'/%3E%3C/svg%3E">
+<script src="/static/admin.js" defer></script>
+</head>
+<body>
+<header class="band" data-state="unknown">
+  <div class="wrap">
+    <h1><a href="/">{{name}}</a> · admin</h1>
+    <p class="detail">Approve, deny or change what friends asked for.</p>
+  </div>
+</header>
+<main class="wrap find">
+  <form id="add" class="filters">
+    <div class="field grow"><label for="add-id">Add a mod as the owner: Modrinth project id, or CurseForge project id</label>
+      <input id="add-id" type="search" autocomplete="off" spellcheck="false" placeholder="e.g. Vg5TIO6d or 1793084"></div>
+    <div class="field"><label for="add-source">Source</label>
+      <select id="add-source"><option value="modrinth">Modrinth</option><option value="curseforge">CurseForge</option></select></div>
+    <div class="field"><label for="add-go" class="sr">Add</label><button id="add-go" class="button solid" type="submit">Add</button></div>
+  </form>
+  <p id="message" class="muted small" role="status" aria-live="polite"></p>
+  <ul id="list" class="found-list"></ul>
+</main>
+<noscript><p class="wrap">This page needs JavaScript.</p></noscript>
+</body>
+</html>
