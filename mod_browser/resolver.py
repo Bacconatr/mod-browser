@@ -49,6 +49,11 @@ class AddedMod:
     reason: str
     #: The version already in the pack that this replaces, when it is too old.
     replaces: str | None = None
+    #: What the pack's metafile for it needs (the applier writes it, and never trusts a later lookup).
+    download_url: str | None = None
+    file_hash: str | None = None
+    hash_format: str | None = None
+    side: str = "both"
 
 
 @dataclass
@@ -73,8 +78,10 @@ def _blocked(name: str, why: str | None = None) -> Problem:
                    f"{name}{f' ({why})' if why else ''} cannot be added: its author blocks downloads outside CurseForge.")
 
 
-def _added(name: str, v: Version, reason: str) -> AddedMod:
-    return AddedMod(name, v.source, v.project_id, v.id, v.version_number, v.channel, v.file_name, reason)
+def _added(name: str, v: Version, reason: str, side: str = "both") -> AddedMod:
+    return AddedMod(name, v.source, v.project_id, v.id, v.version_number, v.channel, v.file_name, reason,
+                    download_url=v.download_url, file_hash=v.file_hash, hash_format=v.hash_format,
+                    side=side if side in ("both", "client", "server") else "both")
 
 
 def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_id: str,
@@ -112,7 +119,7 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
 
     # Everything this request would put in the pack, and what it provides.
     planned: dict[str, tuple[str, str]] = {m.mod_id: (m.version, project.name) for m in jar.provides}
-    added = [_added(project.name, chosen, "requested")]
+    added = [_added(project.name, chosen, "requested", project.side)]
     problems: list[Problem] = []
     members: list[tuple[str, JarInfo]] = [(project.name, jar)]
 
@@ -183,7 +190,7 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
                 problems.append(_blocked(pick_project.name, f"needed by {label}"))
                 continue
             dep_jar = jars.info(pick)
-            entry = _added(pick_project.name, pick, f"required by {label}")
+            entry = _added(pick_project.name, pick, f"required by {label}", pick_project.side)
             if inst:
                 entry.replaces = inst.version
             added.append(entry)

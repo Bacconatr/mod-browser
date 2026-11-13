@@ -23,8 +23,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+#: Still the owner's to decide on: can be approved, denied, overridden or removed.
 OPEN_STATES = ("pending", "approved", "queued")
-STATES = (*OPEN_STATES, "denied")
+#: Being applied: nothing changes it from outside until the applier finishes.
+BUSY_STATES = ("testing", "applying")
+#: Everything not yet finished, for "is this mod already asked for".
+ACTIVE_STATES = (*OPEN_STATES, *BUSY_STATES)
+FINISHED_STATES = ("applied", "test-failed", "rolled-back", "denied")
+STATES = (*ACTIVE_STATES, *FINISHED_STATES)
+_ACTIVE_SQL = "(" + ",".join(f"'{s}'" for s in ACTIVE_STATES) + ")"
 
 
 class InvalidTransition(Exception):
@@ -54,6 +61,7 @@ class Request:
     note: str | None
     created_at: str
     updated_at: str
+    batch: int | None = None
 
     def public(self) -> dict[str, Any]:
         """What the public page may show: no version ids, no notes."""
@@ -72,7 +80,7 @@ class Request:
 
     def admin(self) -> dict[str, Any]:
         return {**self.public(), "seq": self.seq, "note": self.note, "versionId": self.version_id,
-                "added": self.added}
+                "added": self.added, "batch": self.batch}
 
 
 _SCHEMA = """
@@ -93,7 +101,8 @@ CREATE TABLE IF NOT EXISTS requests (
   reason TEXT,
   note TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  batch INTEGER
 );
 CREATE INDEX IF NOT EXISTS requests_seq ON requests (seq);
 """
@@ -110,6 +119,8 @@ class Queue:
         self._db = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_SCHEMA)
+        if "batch" not in {r["name"] for r in self._db.execute("PRAGMA table_info(requests)")}:
+            self._db.execute("ALTER TABLE requests ADD COLUMN batch INTEGER")  # a queue made before the applier
 
     # ---- reads ----
     def _row(self, row: sqlite3.Row) -> Request:
@@ -117,7 +128,7 @@ class Queue:
                        source=row["source"], project_id=row["project_id"], version_id=row["version_id"],
                        mod_name=row["mod_name"], version_number=row["version_number"], channel=row["channel"],
                        side=row["side"], added=json.loads(row["added"]), state=row["state"], reason=row["reason"],
-                       note=row["note"], created_at=row["created_at"], updated_at=row["updated_at"])
+                       note=row["note"], created_at=row["created_at"], updated_at=row["updated_at"], batch=row["batch"])
 
     def get(self, request_id: int) -> Request:
         with self._lock:
@@ -134,17 +145,17 @@ class Queue:
     def open_for(self, requester: str) -> int:
         with self._lock:
             return self._db.execute(
-                "SELECT COUNT(*) FROM requests WHERE lower(requester) = lower(?) AND state IN ('pending','approved','queued')",
+                "SELECT COUNT(*) FROM requests WHERE lower(requester) = lower(?) AND state IN " + _ACTIVE_SQL,
                 (requester,)).fetchone()[0]
 
     def open_count(self) -> int:
         with self._lock:
-            return self._db.execute("SELECT COUNT(*) FROM requests WHERE state IN ('pending','approved','queued')").fetchone()[0]
+            return self._db.execute("SELECT COUNT(*) FROM requests WHERE state IN " + _ACTIVE_SQL).fetchone()[0]
 
     def open_for_project(self, source: str, project_id: str) -> Request | None:
         with self._lock:
             row = self._db.execute(
-                "SELECT * FROM requests WHERE source = ? AND project_id = ? AND state IN ('pending','approved','queued') ORDER BY id LIMIT 1",
+                "SELECT * FROM requests WHERE source = ? AND project_id = ? AND state IN " + _ACTIVE_SQL + " ORDER BY id LIMIT 1",
                 (source, project_id)).fetchone()
         return self._row(row) if row else None
 
@@ -198,3 +209,44 @@ class Queue:
                 version_id=added[0]["versionId"], version_number=added[0]["versionNumber"],
                 channel=added[0]["channel"], side=snapshot.get("side", current.side),
                 added=json.dumps(added), note=None)
+
+    # ---- the applier's side ----
+    def queued(self) -> list[Request]:
+        """Requests waiting to be applied, oldest first."""
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM requests WHERE state = 'queued' ORDER BY id").fetchall()
+        return [self._row(r) for r in rows]
+
+    def next_batch_id(self) -> int:
+        with self._lock:
+            return (self._db.execute("SELECT COALESCE(MAX(batch), 0) FROM requests").fetchone()[0]) + 1
+
+    def in_flight(self) -> list[Request]:
+        """Requests a restart interrupted: testing or applying, with no applier running them."""
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM requests WHERE state IN ('testing','applying') ORDER BY id").fetchall()
+        return [self._row(r) for r in rows]
+
+    def advance(self, ids: list[int], allowed: tuple[str, ...], state: str, *, batch: int | None = None,
+                reason: str | None = None) -> list[Request]:
+        """Move a whole batch to `state`, or none of it if any member is not in an allowed state."""
+        with self._lock:
+            current = [self.get(i) for i in ids]
+            for r in current:
+                if r.state not in allowed:
+                    raise InvalidTransition(f"request {r.id} is {r.state}, not {' or '.join(allowed)}")
+            self._db.execute("BEGIN")
+            try:
+                for r in current:
+                    sets = {"state": state, "seq": self._next_seq(), "updated_at": self._clock()}
+                    if batch is not None:
+                        sets["batch"] = batch
+                    if reason is not None:
+                        sets["reason"] = reason
+                    cols = ", ".join(f"{k} = ?" for k in sets)
+                    self._db.execute(f"UPDATE requests SET {cols} WHERE id = ?", (*sets.values(), r.id))
+                self._db.execute("COMMIT")
+            except BaseException:
+                self._db.execute("ROLLBACK")
+                raise
+            return [self.get(i) for i in ids]
