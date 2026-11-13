@@ -508,6 +508,22 @@ class InterruptedTest(MaintenanceCase):
         self.assertEqual(self.host.calls.count("restore"), 2)
         self.assertEqual(self.host.world, "world-v1")
 
+    def test_a_malformed_claim_from_the_app_is_never_used_for_paths(self):
+        self.queued(CONNECTED)
+        self.owner_asks()
+        runner = self.new_runner()
+        real = runner.app._transport
+
+        def evil(method, path, body):
+            code, answer = real(method, path, body)
+            if path.endswith("/claim") and code == 200:
+                answer["apply"]["batch"] = "../../../etc"
+            return code, answer
+        runner.app._transport = evil
+        self.assertEqual(runner.tick(), "halted")
+        self.assertEqual([c for c in self.host.calls if c != "players"], [])
+        self.assertFalse((self.dir / "etc").exists())
+
     def test_a_lost_journal_with_requests_in_flight_halts(self):
         self.crash("stop")
         self.journal_path.unlink()

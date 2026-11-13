@@ -253,9 +253,31 @@ class Runner:
     def _stage_dir(self, batch: int) -> Path:
         return self.work_dir / f"stage-{batch}"
 
+    @staticmethod
+    def _checked(claim: Any) -> tuple[int, str, list[_Request]]:
+        """The claim comes from the Internet-facing app, and `batch` names directories this root process
+        writes and deletes: nothing in it is used until it has the exact shape expected."""
+        def whole(v: Any) -> bool:
+            return isinstance(v, int) and not isinstance(v, bool) and 1 <= v < 10**9
+        if not isinstance(claim, dict) or not whole(claim.get("batch")) or claim.get("mode") not in ("when-empty", "now"):
+            raise ValueError("malformed claim")
+        raw = claim.get("requests")
+        if not isinstance(raw, list) or not raw or len(raw) > 200:
+            raise ValueError("malformed claim: requests")
+        requests = []
+        for r in raw:
+            if (not isinstance(r, dict) or not whole(r.get("id")) or not isinstance(r.get("requester"), str)
+                    or not isinstance(r.get("added"), list) or not all(isinstance(a, dict) for a in r["added"])
+                    or not isinstance(r.get("mod"), dict) or not isinstance(r["mod"].get("name"), str)):
+                raise ValueError("malformed claim: a request")
+            requests.append(_Request(r))
+        return claim["batch"], claim["mode"], requests
+
     def _run(self, claim: dict[str, Any]) -> str:
-        batch, mode = claim["batch"], claim["mode"]
-        requests = [_Request(r) for r in claim["requests"]]
+        try:
+            batch, mode, requests = self._checked(claim)
+        except ValueError as exc:
+            return self._halt(None, f"needs recovery: the app handed over a {exc}; nothing was done.")
         j: dict[str, Any] = {"batch": batch, "mode": mode, "ids": [r.id for r in requests], "started": _utc()}
         self.journal.enter(j, "claimed", before=self.repo.head(), beforeTree=self.repo.tree())
         self.journal.enter(j, "staging")
