@@ -16,7 +16,7 @@ a commit of this repo. Bump the pin in a Homelab PR, like an image tag.
 | State: online / starting / down | Docker's embedded DNS on the game's compose network, then RCON `list` |
 | Who is online, the max | RCON `list` |
 | TPS, ms per tick | RCON `neoforge tps` (the `Overall` line) |
-| Last restart | First line of the server's `logs/latest.log`, rewritten on every start |
+| Last restart | The launcher's first line in `logs/latest.log`, or, after log4j's midnight roll, in the newest rolled `YYYY-MM-DD-N.log.gz`; unknown rather than a wrong time when none is in reach |
 | Mods: name, jar, side, source | The packwiz metafiles (`*.pw.toml`) in the pack repo; the search box asks `/api/mods?q=`, so matching lives on the server only |
 | Version | Parsed from the jar's filename (packwiz stores no version string) |
 | Added by / added on | The pack repo's git history; see below |

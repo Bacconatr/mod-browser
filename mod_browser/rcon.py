@@ -8,8 +8,12 @@ up?" without mounting /var/run/docker.sock, which would make this
 Internet-facing app root on the guest. A name that resolves outside
 `container_net` (a search-domain fallthrough to public DNS) counts as down.
 
-Last start comes from the first line of the server's logs/latest.log, which
-the server truncates and rewrites on every start (mounted read-only).
+Last start comes from the server's logs (mounted read-only). A start always
+opens a fresh latest.log whose first line is the launcher's `[main/...]` line.
+log4j also rolls latest.log at midnight, though, and the new file then starts
+with an ordinary `[Server thread/...]` line, so when latest.log does not begin
+with a start, the newest start among the rolled `YYYY-MM-DD-N.log.gz` files'
+first lines is the answer, and none in reach means unknown, never midnight.
 
 RCON commands are allowlisted. The app holds the RCON password, which can
 run any console command, so the adapter itself refuses everything but the
@@ -18,6 +22,7 @@ read-only commands the page needs. A later ticket adds `say` for countdowns.
 
 from __future__ import annotations
 
+import gzip
 import ipaddress
 import re
 import socket
@@ -38,7 +43,11 @@ _LOGIN, _COMMAND = 3, 2
 MAX_REPLY_BYTES = 64 * 1024
 _COLOUR = re.compile(r"\x1b\[[0-9;]*m|§.")
 # [12Nov2026 13:58:51.604] [main/INFO] ...
-_LOG_STAMP = re.compile(r"^\[(\d{1,2}[A-Za-z]{3}\d{4} \d{2}:\d{2}:\d{2})")
+_LOG_STAMP = re.compile(r"^\[(\d{1,2}[A-Za-z]{3}\d{4} \d{2}:\d{2}:\d{2})[.\d]*\] \[([^/\]]+)/")
+# Rolled game logs (not debug-N.log.gz). Only the newest few are read: a server up for longer than
+# that many midnights shows "unknown" rather than costing a read of every old log.
+_ROLLED = re.compile(r"^\d{4}-\d{2}-\d{2}-\d+\.log\.gz$")
+MAX_ROLLED_LOGS = 14
 
 
 class _Closed(ServerUnavailable):
@@ -148,16 +157,37 @@ class RconServer:
         return strip_colour(reply)
 
     def last_start(self) -> datetime | None:
+        first = self._first_line(self.log_file, gzip_=False)
+        if first is None:
+            return None
+        start = self._start_in(first)
+        if start is not None or not _LOG_STAMP.match(first):
+            return start
+        # latest.log was rolled at midnight: the start is the first line of one of the rolled logs.
         try:
-            with self.log_file.open("r", encoding="utf-8", errors="replace") as log:
-                first = log.readline()
+            rolled = [p for p in self.log_file.parent.iterdir() if _ROLLED.match(p.name)]
+            rolled.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         except OSError:
             return None
-        match = _LOG_STAMP.match(first)
-        if not match:
+        starts = [s for s in (self._start_in(self._first_line(p, gzip_=True) or "") for p in rolled[:MAX_ROLLED_LOGS]) if s]
+        return max(starts, default=None)
+
+    def _start_in(self, line: str) -> datetime | None:
+        """The time on a server-start line (the launcher's `main` thread), else None."""
+        match = _LOG_STAMP.match(line)
+        if not match or match.group(2) != "main":
             return None
         try:
             stamp = datetime.strptime(match.group(1), "%d%b%Y %H:%M:%S")
         except ValueError:
             return None
         return stamp.replace(tzinfo=self.log_tz)
+
+    @staticmethod
+    def _first_line(path: Path, gzip_: bool) -> str | None:
+        try:
+            opener = gzip.open if gzip_ else open
+            with opener(path, "rt", encoding="utf-8", errors="replace") as log:
+                return log.readline(4096)
+        except (OSError, EOFError):
+            return None
