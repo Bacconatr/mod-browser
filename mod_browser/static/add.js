@@ -30,15 +30,15 @@ const failure = (status, body) => (body && body.error)
 // A read is retried once after a proxy answer, so a restart does not show as an error, and up to
 // three times after a 429: the server checks three mods at a time, and opening several at once
 // queued the rest behind "busy, try again in a moment" (measured on the live site, 2026-11-14).
-async function api(path, tries = 0) {
+async function api(path, tries = { busy: 0, restart: 0 }) {
   const response = await fetch(path, { headers: { accept: "application/json" } });
   let body = null;
   try { body = await response.json(); } catch { /* not JSON */ }
-  const restarting = !body && PROXY_DOWN.has(response.status) && tries < 1;
-  const busy = response.status === 429 && tries < 3;
+  const restarting = !body && PROXY_DOWN.has(response.status) && tries.restart < 1;
+  const busy = response.status === 429 && tries.busy < 3;
   if (!response.ok && (restarting || busy)) {
-    await new Promise((done) => setTimeout(done, busy ? 1500 + 1000 * tries + Math.random() * 1000 : 3000));
-    return api(path, tries + 1);
+    await new Promise((done) => setTimeout(done, busy ? 1500 + 1000 * tries.busy + Math.random() * 1000 : 3000));
+    return api(path, { busy: tries.busy + (busy ? 1 : 0), restart: tries.restart + (restarting ? 1 : 0) });
   }
   if (!response.ok) throw new Error(failure(response.status, body));
   return body;
