@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import secrets
+import stat
 import re
 import shutil
 import subprocess
@@ -260,7 +263,49 @@ class DockerHost:
         self._docker("rm", "-f", STAGE_NAME, check=False)
         self._remove(stage_dir)
 
+    def _publish_manifest(self, stage_dir: Path) -> None:
+        # Never open a game-writable destination for writing: replacing its directory
+        # entry cannot follow a symlink swapped in by a mod during promotion.
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+        src = stage_dir / "data" / "packwiz.json"
+        try:
+            source = os.open(src, flags)
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            raise HostError(f"cannot safely open staged packwiz.json: {exc}") from exc
+        try:
+            info = os.fstat(source)
+            if not stat.S_ISREG(info.st_mode):
+                raise HostError("staged packwiz.json is not a regular file")
+            directory = os.open(self.data_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                try:
+                    current = os.stat("packwiz.json", dir_fd=directory, follow_symlinks=False)
+                except FileNotFoundError:
+                    current = None
+                if current is not None and not stat.S_ISREG(current.st_mode):
+                    raise HostError("live packwiz.json is not a regular file")
+                name = ".packwiz-" + secrets.token_hex(16)
+                dest = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
+                try:
+                    with os.fdopen(dest, "wb") as out, os.fdopen(os.dup(source), "rb") as inp:
+                        shutil.copyfileobj(inp, out)
+                        os.fchmod(out.fileno(), stat.S_IMODE(info.st_mode) & 0o666)
+                        os.fchown(out.fileno(), info.st_uid, info.st_gid)
+                    os.replace(name, "packwiz.json", src_dir_fd=directory, dst_dir_fd=directory)
+                finally:
+                    try:
+                        os.unlink(name, dir_fd=directory)
+                    except FileNotFoundError:
+                        pass
+            finally:
+                os.close(directory)
+        finally:
+            os.close(source)
+
     def promote_mods(self, stage_dir: Path) -> None:
+        self._publish_manifest(stage_dir)
         incoming, live = self.data_dir / "mods.incoming", self.data_dir / "mods"
         self._remove(incoming)
         self._copy(stage_dir / "data" / "mods", incoming)
@@ -269,8 +314,6 @@ class DockerHost:
         live.rename(old)
         incoming.rename(live)
         self._remove(old)
-        if (stage_dir / "data" / "packwiz.json").is_file():
-            shutil.copy2(stage_dir / "data" / "packwiz.json", self.data_dir / "packwiz.json")
         want = sorted(p.name for p in (stage_dir / "data" / "mods").iterdir())
         if sorted(p.name for p in live.iterdir()) != want:
             raise HostError("the live mods/ does not match the downloaded one after the swap")
