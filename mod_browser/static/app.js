@@ -40,13 +40,24 @@ const day = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short"
 // ---- status ----
 let lastStatus = null;
 
+// "Back online around 4:12 AM (in about 6 min)": the server's estimate, learned from past restarts.
+function backOnline(status) {
+  const by = status && status.apply && status.apply.backOnlineBy;
+  if (!by) return "";
+  const at = new Date(by);
+  if (Number.isNaN(at.getTime())) return "";
+  const mins = Math.max(1, Math.round((at.getTime() - Date.now()) / 60000));
+  const clock = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return `Back online around ${clock} (in about ${mins} min).`;
+}
+
 function renderStatus(status) {
   const state = status ? status.state : "unknown";
   const band = document.querySelector(".band");
   band.dataset.state = state;
   $("state-label").textContent = STATES[state].label;
   const apply = status && status.apply && status.apply.phase !== "idle" ? status.apply.detail : "";
-  $("state-detail").textContent = [STATES[state].detail, apply].filter(Boolean).join(" ");
+  $("state-detail").textContent = [STATES[state].detail, apply, backOnline(status)].filter(Boolean).join(" ");
   $("checked").textContent = status && status.checkedAt ? `checked ${ago(status.checkedAt)}` : "";
   if (status && status.address) $("address").value = status.address;
 
