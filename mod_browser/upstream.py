@@ -18,6 +18,12 @@ came with the base pack are changed or removed, and only those that came from
 CurseForge: a base mod with no upstream match is reported `removed` because the
 new release dropped it, never because a pin replaced it.
 
+A file whose author blocks outside downloads (CurseForge gives it no URL) is
+written as a Modrinth entry when Modrinth hosts the byte-identical file (same
+sha1), so packwiz-installer downloads it instead of asking every player to fetch
+it by hand. On 2026-11-14 that was 10 of the pack's 13 blocked files, Create
+Aeronautics among them; an update must not put them back behind CurseForge.
+
 CurseForge answers here are hand-written from its documented schema in the
 tests: the key cannot be tried live from the tests.
 """
@@ -38,6 +44,7 @@ from zoneinfo import ZoneInfo
 
 from .catalog import norm
 from .curseforge import API
+MODRINTH_FILES = "https://api.modrinth.com/v2/version_files"
 from .queue import Queue
 from .versions import compare_versions
 
@@ -57,6 +64,8 @@ class UpstreamMod:
     version: str
     file_hash: str | None
     hash_format: str | None
+    #: For a file CurseForge gives no URL: Modrinth's copy of the same bytes (projectId, versionId, url).
+    modrinth: tuple[str, str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -129,7 +138,9 @@ class Diff:
 
 
 def _op(mod: UpstreamMod, op: str, **extra: Any) -> dict[str, Any]:
-    return {"op": op, "name": mod.name, "source": "curseforge", "projectId": mod.project_id, "versionId": mod.file_id,
+    where = ({"source": "modrinth", "projectId": mod.modrinth[0], "versionId": mod.modrinth[1], "downloadUrl": mod.modrinth[2]}
+             if mod.modrinth else {"source": "curseforge", "projectId": mod.project_id, "versionId": mod.file_id})
+    return {"op": op, "name": mod.name, **where,
             "versionNumber": mod.version, "channel": "release", "fileName": mod.file_name, "fileHash": mod.file_hash,
             "hashFormat": mod.hash_format, "side": "both", "reason": "upstream", **extra}
 
@@ -174,6 +185,23 @@ class CurseForgeUpstream:
         self.http, self.project_id = http, project_id
         self._headers = {"x-api-key": api_key, "Accept": "application/json"}
 
+    def _modrinth_twins(self, sha1s: list[str]) -> dict[str, tuple[str, str, str]]:
+        """sha1 -> (project, version, url) for the blocked files Modrinth hosts byte for byte.
+        Modrinth not answering only means the files stay CurseForge entries, as before."""
+        if not sha1s:
+            return {}
+        try:
+            found = self.http.post_json(MODRINTH_FILES, {"hashes": sha1s, "algorithm": "sha1"})  # no CurseForge key here
+        except Exception:  # noqa: BLE001
+            log.warning("Modrinth did not answer the blocked-file lookup; those files stay CurseForge entries")
+            return {}
+        out: dict[str, tuple[str, str, str]] = {}
+        for sha1, v in (found.items() if isinstance(found, dict) else []):
+            f = next((f for f in v.get("files") or [] if (f.get("hashes") or {}).get("sha1") == sha1), None)
+            if f and f.get("url") and v.get("project_id") and v.get("id"):
+                out[sha1] = (str(v["project_id"]), str(v["id"]), str(f["url"]))
+        return out
+
     def _chunks(self, ids: list[str], size: int = 100):
         for i in range(0, len(ids), size):
             yield [int(x) for x in ids[i:i + size]]
@@ -202,14 +230,19 @@ class CurseForgeUpstream:
             for m in self.http.post_json(f"{API}/mods", {"modIds": chunk}, self._headers).get("data") or []:
                 names[str(m["id"])] = str(m.get("name") or "")
         mods = []
+        sha1s: dict[str, str | None] = {}
         for pid, fid in entries:
             info = file_info.get(fid)
             if info is None:
                 raise LookupError(f"CurseForge does not know file {fid} of mod {pid}")
-            sha1 = next((h.get("value") for h in info.get("hashes") or [] if h.get("algo") == 1), None)
+            sha1s[fid] = next((h.get("value") for h in info.get("hashes") or [] if h.get("algo") == 1), None)
+        twins = self._modrinth_twins([s for fid, s in sha1s.items() if s and not file_info[fid].get("downloadUrl")])
+        for pid, fid in entries:
+            info, sha1 = file_info[fid], sha1s[fid]
             file_name = str(info.get("fileName") or "")
             mods.append(UpstreamMod(pid, fid, names.get(pid) or str(info.get("displayName") or file_name), file_name,
-                                    version_of(file_name), sha1, "sha1" if sha1 else None))
+                                    version_of(file_name), sha1, "sha1" if sha1 else None,
+                                    twins.get(sha1) if sha1 and not info.get("downloadUrl") else None))
         return Release(str(newest["id"]), str(newest.get("displayName") or newest.get("fileName") or ""),
                        version_of(str(newest.get("fileName") or "")) or str(newest.get("displayName") or ""),
                        str(newest.get("fileDate") or ""), tuple(mods))
