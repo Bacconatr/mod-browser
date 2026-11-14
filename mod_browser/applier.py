@@ -276,9 +276,10 @@ class ApplyDesk:
             self.queue.kv_set(REQUEST_KEY, "")
         if outcome == "applied":
             self._learn_from(batch)
-        detail = {"applied": f"Batch {batch} applied. The server is online.",
-                  "test-failed": f"Batch {batch} did not apply; the server is back on the old pack: {reason}",
-                  "rolled-back": f"Batch {batch} was rolled back; the server is back on the old pack and world: {reason}"}[outcome]
+        # Friends read these on the status page: no batch numbers (the admin page has them).
+        detail = {"applied": "The mod update was applied.",
+                  "test-failed": f"The mod update did not apply, so the server is still on the old mods: {reason}",
+                  "rolled-back": f"The mod update was undone; the server is back on the old mods and world: {reason}"}[outcome]
         self._set_phase("online" if outcome == "applied" else "failed", detail, batch)
         return self.status()
 
