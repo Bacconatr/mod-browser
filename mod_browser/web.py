@@ -267,8 +267,8 @@ class App:
             links.append('<a href="/setup">Set up the game on your computer.</a>')
         text = text.replace("{{addlink}}", "<p>" + " ".join(links) + "</p>" if links else "")
         # The nav names only the pages this site serves, the same switches as the links above.
-        here = {"add.html": "/add", "queue.html": "/queue", "setup.html": "/setup"}.get(filename)
-        nav = [("/#mods-heading", "Mods", True), ("/add", "Find a mod", browsing), ("/queue", "Requests", queueing),
+        here = {"index.html": "/", "add.html": "/add", "queue.html": "/queue", "setup.html": "/setup"}.get(filename)
+        nav = [("/", "Status", True), ("/add", "Find a mod", browsing), ("/queue", "Requests", queueing),
                ("/setup", "Set up", setting_up)]
         text = text.replace("{{navlinks}}", "".join(
             '<li><a href="%s"%s>%s</a></li>' % (href, ' aria-current="page"' if href == here else "", label)
@@ -558,10 +558,7 @@ class App:
         since = (req.query.get("since") or [""])[0]
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", since):
             return _error(HTTPStatus.BAD_REQUEST, "since must be a date like 2026-11-12")
-        mods = [m for m in self.catalog.catalog()["mods"] if m["addedOn"] and m["origin"] != "base"]
-        latest = max((m["addedOn"] for m in mods), default=None)
-        added = [{"name": m["name"], "on": m["addedOn"], "by": m["addedBy"]} for m in mods if m["addedOn"] >= since]
-        return _json({"since": since, "changed": bool(added), "latest": latest, "added": added})
+        return _json(self.catalog.changes(since))
 
     def prism_zip(self, req: Req) -> Response:
         jar = self.setup.bootstrap_jar

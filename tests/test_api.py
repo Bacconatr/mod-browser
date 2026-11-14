@@ -231,6 +231,11 @@ class ApiTest(unittest.TestCase):
         for asset in ("/static/app.css", "/static/app.js"):
             self.assertEqual(self.get(self.public + asset)[0], 200, asset)
 
+    def test_the_front_page_is_the_status_tab(self):
+        body = self.get(self.public + "/")[2]
+        self.assertIn(b'<li><a href="/" aria-current="page">Status</a></li>', body)
+        self.assertNotIn(b">Mods</a>", body)
+
     def test_page_shows_the_server_icon_beside_its_name(self):
         body = self.get(self.public + "/")[2]
         self.assertIn(b'<img class="server-icon" src="/static/server-icon.png"', body)
