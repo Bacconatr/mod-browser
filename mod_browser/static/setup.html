@@ -11,15 +11,19 @@
 <script src="/static/setup.js" defer></script>
 </head>
 <body>
-<header class="band" data-state="unknown">
-  <div class="wrap">
-    <h1><a href="/">{{name}}</a></h1>
-    <p class="detail">Set up the game on your computer. Server address <strong>{{address}}</strong>.</p>
+<header class="band wrap" data-state="unknown">
+  <nav class="nav glass" aria-label="Site">
+    <a class="wordmark" href="/">{{name}}</a>
+    <ul class="nav-links">{{navlinks}}</ul>
+  </nav>
+  <div class="page-head">
+    <h1>Set up the game</h1>
+    <p class="detail">On your computer, once. Server address <strong>{{address}}</strong>.</p>
   </div>
 </header>
 <main class="wrap find steps">
   <p id="pack-notice" class="notice" role="status" aria-live="polite" hidden></p>
-  <ol>
+  <ol class="glass panel">
     <li><strong>Install Prism Launcher</strong> from <a href="https://prismlauncher.org/download/" rel="noopener noreferrer">prismlauncher.org</a> and sign in with your Minecraft account.</li>
     <li><strong>Download the instance.</strong> <a id="download" class="button solid" href="/prism/instance.zip" download>Download for Prism</a>
       <span id="download-note" class="muted small"></span></li>
@@ -28,12 +32,12 @@
     <li><strong>Join</strong> <code id="address">{{address}}</code> from <em>Multiplayer</em>.</li>
   </ol>
   <p class="muted small" id="memory-note"></p>
-  <section id="manual" hidden>
+  <section id="manual" class="glass panel" hidden>
     <h2>Mods you download by hand</h2>
     <p class="muted">The authors of these mods do not allow other launchers to download them. The first launch will stop and name each one: open its page, download the file named below, and put it in the folder the launcher shows. You only do this once per mod.</p>
     <ul id="manual-list" class="found-list"></ul>
   </section>
-  <section>
+  <section class="glass panel">
     <h2>Did the pack change?</h2>
     <form id="since-form" class="filters">
       <div class="field"><label for="since">When did you last play?</label><input id="since" type="date"></div>

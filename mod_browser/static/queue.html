@@ -11,13 +11,18 @@
 <script src="/static/queue.js" defer></script>
 </head>
 <body>
-<header class="band" data-state="unknown">
-  <div class="wrap">
-    <h1><a href="/">{{name}}</a></h1>
-    <p class="detail">Mod requests. <a href="/add">Ask for a mod</a>.</p>
+<header class="band wrap" data-state="unknown">
+  <nav class="nav glass" aria-label="Site">
+    <a class="wordmark" href="/">{{name}}</a>
+    <ul class="nav-links">{{navlinks}}</ul>
+  </nav>
+  <div class="page-head">
+    <h1>Mod requests</h1>
+    <p class="detail">What friends have asked for, and where each one stands. <a href="/add">Ask for a mod</a>.</p>
   </div>
 </header>
 <main class="wrap find">
+  <div class="glass panel">
   <p id="result-line" class="muted small" aria-live="polite">Loading the queue…</p>
   <div class="table-wrap">
     <table class="mod-table">
@@ -25,7 +30,8 @@
       <tbody id="rows"></tbody>
     </table>
   </div>
-  <p class="muted small">Pending: waiting for the owner. Approved: the owner said yes, not queued yet. Queued: will be applied at the next restart. Denied: not coming, with the reason.</p>
+  </div>
+  <p class="legend">Pending: waiting for the owner. Approved: the owner said yes, not queued yet. Queued: will be applied at the next restart. Denied: not coming, with the reason.</p>
 </main>
 <noscript><p class="wrap">This page needs JavaScript.</p></noscript>
 </body>

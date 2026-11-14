@@ -162,7 +162,7 @@ async function search() {
     const parts = [`${pack.name}${pack.version ? ` ${pack.version}` : ""}`];
     if (pack.minecraft) parts.push(`Minecraft ${pack.minecraft}`);
     if (pack.neoforge) parts.push(`NeoForge ${pack.neoforge}`);
-    $("pack-line").textContent = parts.join(" · ");
+    $("pack-line").textContent = parts.join(", ");
     renderMods(data.mods);
   } catch {
     if (seq === searchSeq) $("result-line").textContent = "The mod list couldn't be read just now. Try again in a minute.";

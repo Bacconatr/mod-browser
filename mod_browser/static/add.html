@@ -12,14 +12,18 @@
 <script src="/static/add.js" defer></script>
 </head>
 <body>
-<header class="band" data-state="unknown">
-  <div class="wrap">
-    <h1><a href="/">{{name}}</a></h1>
+<header class="band wrap" data-state="unknown">
+  <nav class="nav glass" aria-label="Site">
+    <a class="wordmark" href="/">{{name}}</a>
+    <ul class="nav-links">{{navlinks}}</ul>
+  </nav>
+  <div class="page-head">
+    <h1>Find a mod</h1>
     <p class="detail">Find a mod for NeoForge 1.21.1. Server address <strong>{{address}}</strong>. <a href="/queue">See what friends have asked for.</a></p>
   </div>
 </header>
 <main class="wrap find">
-  <form id="find" class="filters" role="search">
+  <form id="find" class="filters glass panel" role="search">
     <div class="field grow">
       <label for="q">Search Modrinth, or paste a CurseForge project ID</label>
       <div class="search">
@@ -31,8 +35,8 @@
   </form>
   <ul id="warnings" class="notes" aria-live="polite"></ul>
   <p id="result-line" class="muted small" aria-live="polite"></p>
-  <ul id="results" class="found-list"></ul>
-  <section id="detail" class="detail-panel" hidden aria-live="polite"></section>
+  <ul id="results" class="found-list glass panel"></ul>
+  <section id="detail" class="detail-panel glass" hidden aria-live="polite"></section>
 </main>
 <noscript><p class="wrap">This page needs JavaScript. Search on Modrinth or CurseForge and tell the owner what you want.</p></noscript>
 </body>

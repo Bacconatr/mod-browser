@@ -28,7 +28,7 @@ async function load() {
       const mod = el("td", {}, [el("strong", { text: r.mod.name }), document.createTextNode(" "), el("span", { class: "muted", text: r.mod.versionNumber + (r.mod.channel === "release" ? "" : ` (${r.mod.channel})`) })]);
       if (r.dependencies.length) mod.append(el("div", { class: "meta" }, [el("span", { text: `with ${r.dependencies.join(", ")}` })]));
       if (r.reason) mod.append(el("div", { class: "meta" }, [el("span", { text: r.reason })]));
-      rows.append(el("tr", {}, [mod, el("td", { text: r.requester }), el("td", { text: LABEL[r.state] || r.state }), el("td", { text: day(r.createdAt) })]));
+      rows.append(el("tr", {}, [mod, el("td", { text: r.requester }), el("td", {}, [el("span", { class: `pill pill-${r.state}`, text: LABEL[r.state] || r.state })]), el("td", { text: day(r.createdAt) })]));
     }
   } catch {
     $("result-line").textContent = "Could not load the queue. It will try again.";

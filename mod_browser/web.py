@@ -100,7 +100,7 @@ ADMIN_ACTIONS = ("approve", "deny", "override", "remove", "requeue")
 
 SECURITY_HEADERS = {
     "Content-Security-Policy": (
-        "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https://cdn.modrinth.com https://media.forgecdn.net; "
         "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     ),
     "X-Content-Type-Options": "nosniff",
@@ -266,6 +266,13 @@ class App:
         if setting_up:
             links.append('<a href="/setup">Set up the game on your computer.</a>')
         text = text.replace("{{addlink}}", "<p>" + " ".join(links) + "</p>" if links else "")
+        # The nav names only the pages this site serves, the same switches as the links above.
+        here = {"add.html": "/add", "queue.html": "/queue", "setup.html": "/setup"}.get(filename)
+        nav = [("/#mods-heading", "Mods", True), ("/add", "Find a mod", browsing), ("/queue", "Requests", queueing),
+               ("/setup", "Set up", setting_up)]
+        text = text.replace("{{navlinks}}", "".join(
+            '<li><a href="%s"%s>%s</a></li>' % (href, ' aria-current="page"' if href == here else "", label)
+            for href, label, on in nav if on))
         text = text.replace("{{requesting}}", "true" if queueing else "false")
         for key, value in {"name": name, "address": address}.items():
             text = text.replace("{{" + key + "}}", html.escape(value))
