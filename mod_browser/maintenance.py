@@ -328,7 +328,7 @@ class Runner:
         self._say(j, "backing-up", "Backing up the world.")
         try:
             manifest = self.host.backup(self.backup_dir / f"batch-{batch}")
-        except HostError as exc:
+        except (HostError, OSError) as exc:
             return self._start_old(j, staged, "test-failed", f"the world backup failed ({exc}), so nothing was changed")
         self.journal.enter(j, "backed-up", manifest=manifest)
         self.journal.enter(j, "test-booting")
@@ -351,7 +351,7 @@ class Runner:
             j["merge"] = self.repo.promote(staged)
             self.journal.save(j)
             self.host.promote_mods(self._stage_dir(batch))
-        except (StageError, HostError) as exc:
+        except (StageError, HostError, OSError) as exc:
             return self._roll_back(j, staged, f"the new pack could not be put in place: {exc}")
         self.journal.enter(j, "promoted")
         return self._start_new(j, staged)
@@ -381,6 +381,7 @@ class Runner:
         return self._open_and_finish(j, staged, "applied", "")
 
     def _open_and_finish(self, j: dict[str, Any], staged: Staged | None, outcome: str, reason: str) -> str:
+        self.journal.enter(j, "opening-joins", verifiedOutcome=outcome, verifiedReason=reason)
         try:
             self.host.allow_joins()
         except HostError as exc:
@@ -435,7 +436,7 @@ class Runner:
         self.journal.enter(j, "restoring")
         try:
             self.host.restore(j["manifest"], self.work_dir / f"failed-{j['batch']}")
-        except HostError as exc:
+        except (HostError, OSError) as exc:
             return self._halt(j, f"needs recovery: {reason}; restoring the world backup failed ({exc}).")
         self.journal.enter(j, "restored")
         try:
@@ -498,14 +499,15 @@ class Runner:
             result = self._report_outcome(j)
         elif not j.get("stopStarted"):
             result = self._defer(j, None, "Recovered: the run was interrupted before the server was touched.")
+        elif j.get("phase") == "opening-joins":
+            return self._halt(j, "needs recovery: joins may have reopened; inspect the live world before taking any action. No backup was restored.")
         elif j.get("phase") == "live-verified" or (j.get("startToken") and j.get("promoteStarted") and j.get("phase") == "waiting-done"):
             result = self._recover_new(j)
         elif j.get("promoteStarted"):
-            result = self._roll_back(j, None, "the run was interrupted after the new pack was put in place; "
-                                              "rolled back to the backup by the owner's recovery")
+            return self._halt(j, "needs recovery: join exclusion cannot be established after interruption; inspect the live world before restoring a backup.")
         else:
             try:
-                self.host.stop_live()
+                self.host.stop_live(clean=False)
             except HostError as exc:
                 return self._halt(j, f"needs recovery: the server did not stop for the recovery ({exc}).")
             result = self._start_old(j, None, "test-failed", "the run was interrupted before the new pack was put in "
@@ -516,13 +518,13 @@ class Runner:
 
     def _recover_new(self, j: dict[str, Any]) -> str:
         """The new server may already be up. Accept it only on evidence: the pack is the merge, and this
-        very start (same token) logged Done. Anything less rolls back."""
+        very start (same token) logged Done. Otherwise halt: a reboot may have reopened joins."""
         merged = j.get("merge") and self.repo.head() == j["merge"]
         boot = self.host.wait_fresh_done(j["startToken"], 60) if merged else BootResult(False, "the pack is not the merge")
         if merged and boot.ok:
             self.journal.enter(j, "live-verified")
             return self._open_and_finish(j, None, "applied", "")
-        return self._roll_back(j, None, f"the recovery could not verify the new server ({boot.reason}); rolled back")
+        return self._halt(j, f"needs recovery: join exclusion cannot be established and the new server cannot be verified ({boot.reason}); inspect the world before restoring a backup.")
 
     def _resume(self) -> None:
         try:

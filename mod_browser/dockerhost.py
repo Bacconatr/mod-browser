@@ -331,7 +331,7 @@ class DockerHost:
             n += 1
         keep = aside / f"attempt-{n}"
         keep.mkdir()
-        for name in ("world", *manifest["files"]["members"]):
+        for name in ("world", *SERVER_FILES):
             if (self.data_dir / name).exists():
                 (self.data_dir / name).rename(keep / name)  # the failed world is kept, never deleted here
         self._tar(["--extract", "--gzip", "--same-owner", "--file", manifest["world"]["file"], "-C", str(self.data_dir)])

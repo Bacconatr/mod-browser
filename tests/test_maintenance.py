@@ -480,7 +480,7 @@ class InterruptedTest(MaintenanceCase):
         self.assertEqual(self.state_of(rid), "applied")
         self.assertNotIn("restore", self.host.calls)
 
-    def test_after_promote_without_evidence_of_a_fresh_boot_recovery_rolls_back(self):
+    def test_after_promote_without_evidence_of_a_fresh_boot_recovery_halts(self):
         (rid,) = self.queued(CONNECTED)
         tree = self.tree()
         self.owner_asks()
@@ -488,28 +488,67 @@ class InterruptedTest(MaintenanceCase):
         self.host.crash_at = "wait_done"
         with self.assertRaises(Crash):
             self.runner.tick()
-        self.assertEqual(self.new_runner().recover(), "rolled-back")
-        self.assertEqual(self.tree(), tree)
-        self.assertEqual((self.host.world, self.host.mods), ("world-v1", "mods-v1"))
-        self.assertEqual(self.state_of(rid), "rolled-back")
+        self.assertEqual(self.new_runner().recover(), "halted")
+        self.assertNotIn("restore", self.host.calls)
+        self.assertNotEqual(self.state_of(rid), "rolled-back")
 
-    def test_a_restart_of_the_server_by_someone_else_is_not_fresh_evidence(self):
+    def test_reboot_may_open_joins_and_recovery_preserves_player_progress(self):
         rid = self.crash("wait_done")
-        self.host.start_live()                                     # e.g. auto-deploy, a docker restart
-        self.host.boots = [True]
-        self.assertEqual(self.new_runner().recover(), "rolled-back")
-        self.assertEqual(self.state_of(rid), "rolled-back")
+        self.host.blocked = False  # guest reboot lost the firewall rule
+        self.host.start_live()
+        self.host.world = "player-progress"
+        self.assertEqual(self.new_runner().recover(), "halted")
+        self.assertEqual(self.host.world, "player-progress")
+        self.assertNotIn("restore", self.host.calls)
+        self.assertNotEqual(self.state_of(rid), "rolled-back")
 
-    def test_a_crash_in_the_middle_of_a_restore_is_restored_again(self):
+    def test_recovery_never_rolls_back_after_joins_may_have_opened(self):
+        self.crash("allow")
+        self.host.start_live()
+        self.assertEqual(self.new_runner().recover(), "halted")
+        self.assertNotIn("restore", self.host.calls)
+
+    def test_filesystem_error_during_backup_restarts_old_server(self):
+        (rid,) = self.queued(CONNECTED)
+        self.owner_asks()
+        def fail(dest):
+            raise OSError("disk full")
+        self.host.backup = fail
+        self.assertEqual(self.runner.tick(), "test-failed")
+        self.assertTrue(self.host.is_running)
+        self.assertEqual(self.state_of(rid), "test-failed")
+
+    def test_recovery_accepts_an_uncleanly_stopped_container(self):
+        self.crash("backup")
+        calls = []
+        def stop(clean=True):
+            calls.append(clean)
+            if clean:
+                raise HostError("unclean exit")
+        self.host.stop_live = stop
+        self.assertEqual(self.new_runner().recover(), "test-failed")
+        self.assertEqual(calls, [False])
+
+    def test_restore_filesystem_error_halts_without_claiming_success(self):
+        (rid,) = self.queued(CONNECTED)
+        self.owner_asks()
+        self.host.boots = [False, True]
+        def fail(manifest, aside):
+            raise OSError("disk full")
+        self.host.restore = fail
+        self.assertEqual(self.runner.tick(), "halted")
+        self.assertNotEqual(self.state_of(rid), "rolled-back")
+        self.assertFalse(self.host.is_running)
+
+    def test_a_crash_in_the_middle_of_a_restore_requires_inspection(self):
         (rid,) = self.queued(CONNECTED)
         self.owner_asks()
         self.host.boots = [False, True]
         self.host.crash_at = "restore"
         with self.assertRaises(Crash):
             self.runner.tick()
-        self.assertEqual(self.new_runner().recover(), "rolled-back")
-        self.assertEqual(self.host.calls.count("restore"), 2)
-        self.assertEqual(self.host.world, "world-v1")
+        self.assertEqual(self.new_runner().recover(), "halted")
+        self.assertEqual(self.host.calls.count("restore"), 1)
 
     def test_a_malformed_claim_from_the_app_is_never_used_for_paths(self):
         self.queued(CONNECTED)
