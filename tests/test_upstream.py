@@ -233,7 +233,9 @@ class CurseForgeAdapterTest(UpstreamCase):
         def __init__(self) -> None:
             self.posts: list[tuple[str, dict]] = []
             manifest = {"files": [{"projectID": 947914, "fileID": 8777574, "required": True},
-                                  {"projectID": 4242, "fileID": 11, "required": True}]}
+                                  {"projectID": 4242, "fileID": 11, "required": True},
+                                  {"projectID": 676721, "fileID": 12, "required": True},
+                                  {"projectID": 1793084, "fileID": 13, "required": True}]}
             buf = io.BytesIO()
             with zipfile.ZipFile(buf, "w") as zf:
                 zf.writestr("manifest.json", json.dumps(manifest))
@@ -255,19 +257,80 @@ class CurseForgeAdapterTest(UpstreamCase):
 
         def post_json(self, url, body, headers=None):
             self.posts.append((url, body))
+            if url == "https://api.modrinth.com/v2/version_files":
+                assert headers is None, "the CurseForge key never goes to Modrinth"
+                return {h: {"project_id": "oWaK0Q19", "id": "44pLdPGg", "files": [
+                    {"url": f"https://cdn.modrinth.com/data/oWaK0Q19/versions/44pLdPGg/{h}.jar", "hashes": {"sha1": h}}]}
+                    for h in body["hashes"] if h == "ee"}
             if url.endswith("/mods/files"):
                 return {"data": [{"id": 8777574, "modId": 947914, "fileName": "create_connected-1.3.4-mc1.21.1.jar",
+                                  "downloadUrl": "https://edge.forgecdn.net/files/8777/574/create_connected-1.3.4-mc1.21.1.jar",
                                   "hashes": [{"value": "ab", "algo": 1}, {"value": "cd", "algo": 2}]},
-                                 {"id": 11, "modId": 4242, "fileName": "strawstatues-1.0.jar", "displayName": "strawstatues-1.0.jar", "hashes": []}]}
-            return {"data": [{"id": 947914, "name": "Create: Connected"}, {"id": 4242, "name": "Straw Statues"}]}
+                                 {"id": 11, "modId": 4242, "fileName": "strawstatues-1.0.jar", "displayName": "strawstatues-1.0.jar", "hashes": []},
+                                 # Blocked by its author (no downloadUrl); Modrinth has the same bytes.
+                                 {"id": 12, "modId": 676721, "fileName": "create-aeronautics-bundled-1.21.1-1.3.2.jar",
+                                  "hashes": [{"value": "ee", "algo": 1}]},
+                                 # Blocked, and not on Modrinth.
+                                 {"id": 13, "modId": 1793084, "fileName": "loconautics-0.1.1BETA.jar",
+                                  "hashes": [{"value": "ff", "algo": 1}]}]}
+            return {"data": [{"id": 947914, "name": "Create: Connected"}, {"id": 4242, "name": "Straw Statues"},
+                             {"id": 676721, "name": "Create Aeronautics"}, {"id": 1793084, "name": "Create: Loconautics"}]}
 
     def test_reads_the_newest_release_its_manifest_and_names_every_mod(self):
         http = self.Http()
         release = CurseForgeUpstream(http, "k").latest()
         self.assertEqual((release.file_id, release.version), ("9400000", "2.10"))
         self.assertEqual([(m.project_id, m.name, m.version, m.file_hash) for m in release.mods], [
-            ("947914", "Create: Connected", "1.3.4-mc1.21.1", "ab"), ("4242", "Straw Statues", "1.0", None)])
-        self.assertEqual([u.rsplit("/", 1)[1] for u, _ in http.posts], ["files", "mods"])
+            ("947914", "Create: Connected", "1.3.4-mc1.21.1", "ab"), ("4242", "Straw Statues", "1.0", None),
+            ("676721", "Create Aeronautics", "1.21.1-1.3.2", "ee"), ("1793084", "Create: Loconautics", "0.1.1BETA", "ff")])
+        self.assertEqual([u.rsplit("/", 1)[1] for u, _ in http.posts], ["files", "mods", "version_files"])
+
+    def test_a_file_curseforge_blocks_is_found_on_modrinth_by_its_bytes(self):
+        mods = {m.name: m for m in CurseForgeUpstream(self.Http(), "k").latest().mods}
+        self.assertEqual(mods["Create Aeronautics"].modrinth[:2], ("oWaK0Q19", "44pLdPGg"))
+        self.assertIsNone(mods["Create: Loconautics"].modrinth)       # blocked, and not on Modrinth
+        self.assertIsNone(mods["Create: Connected"].modrinth)         # CurseForge serves it: never looked up
+
+    def test_modrinth_not_answering_or_answering_nonsense_leaves_blocked_files_as_curseforge_entries(self):
+        for answer in (OSError("api.modrinth.com: timed out"), {"ee": None}, {"ee": {"files": ["x"]}}, ["nonsense"]):
+            http = self.Http()
+            real = http.post_json
+
+            def flaky(url, body, headers=None, answer=answer):
+                if "modrinth" not in url:
+                    return real(url, body, headers)
+                if isinstance(answer, Exception):
+                    raise answer
+                return answer
+            http.post_json = flaky
+            mods = {m.name: m for m in CurseForgeUpstream(http, "k").latest().mods}
+            self.assertIsNone(mods["Create Aeronautics"].modrinth, answer)
+
+
+class ModrinthTwinTest(UpstreamCase):
+    """Through the owner's upstream request: what the applier is handed for a blocked file."""
+
+    TWIN = ("oWaK0Q19", "44pLdPGg", "https://cdn.modrinth.com/data/oWaK0Q19/versions/44pLdPGg/create-aeronautics-bundled-1.21.1-1.3.2.jar")
+
+    def release(self, *mods: UpstreamMod) -> Release:
+        return Release("9400000", "v2.10", "2.10", "2026-11-20T10:00:00Z", RELEASE.mods + mods)
+
+    def test_a_blocked_file_modrinth_hosts_is_added_from_modrinth_and_keeps_its_curseforge_ids(self):
+        aero = UpstreamMod("676721", "8763471", "Create Aeronautics", "create-aeronautics-bundled-1.21.1-1.3.2.jar",
+                           "1.21.1-1.3.2", "ee", "sha1", self.TWIN)
+        self.source.release = self.release(aero)
+        self.checker.check()
+        op = {o["name"]: o for o in self.only()["added"]}["Create Aeronautics"]
+        self.assertEqual((op["source"], op["projectId"], op["versionId"], op["downloadUrl"]), ("modrinth", *self.TWIN))
+        self.assertEqual(op["curseforge"], {"projectId": "676721", "fileId": "8763471"})
+        self.assertEqual(op["fileName"], "create-aeronautics-bundled-1.21.1-1.3.2.jar")
+
+    def test_a_blocked_file_modrinth_does_not_host_stays_a_curseforge_entry(self):
+        loco = UpstreamMod("1793084", "9545733", "Create: Loconautics", "loconautics-0.1.1BETA.jar", "0.1.1BETA", "ff", "sha1")
+        self.source.release = self.release(loco)
+        self.checker.check()
+        op = {o["name"]: o for o in self.only()["added"]}["Create: Loconautics"]
+        self.assertEqual((op["source"], op["projectId"], op["versionId"]), ("curseforge", "1793084", "9545733"))
 
 
 if __name__ == "__main__":

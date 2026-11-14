@@ -62,6 +62,9 @@ def metafile_text(mod: dict[str, Any]) -> str:
             raise StageError(f"{mod['name']} has no download URL.")
         lines += [f"url = {_q(mod['downloadUrl'])}", f"hash-format = {_q(mod['hashFormat'])}", f"hash = {_q(mod['fileHash'])}",
                   "", "[update]", "[update.modrinth]", f"mod-id = {_q(mod['projectId'])}", f"version = {_q(mod['versionId'])}"]
+        cf = mod.get("curseforge")
+        if cf:  # a CurseForge-blocked file fetched from Modrinth keeps the ids the upstream check matches by
+            lines += ["", "[update.curseforge]", f"file-id = {int(cf['fileId'])}", f"project-id = {int(cf['projectId'])}"]
     elif mod["source"] == "curseforge":
         lines += [f"hash-format = {_q(mod['hashFormat'])}", f"hash = {_q(mod['fileHash'])}", 'mode = "metadata:curseforge"',
                   "", "[update]", "[update.curseforge]", f"file-id = {int(mod['versionId'])}", f"project-id = {int(mod['projectId'])}"]

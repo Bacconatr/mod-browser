@@ -214,6 +214,15 @@ class ManualDownloadTest(SetupCase):
         self.assertIn(1, ids)
         self.assertTrue(all(isinstance(i, int) for i in ids))
 
+    def test_a_noted_mod_now_fetched_from_modrinth_is_not_a_download_by_hand(self):
+        # The notes still name it, but its metafile now downloads from Modrinth (the same bytes).
+        self.start()
+        meta = self.pack / "mods" / "create-connected.pw.toml"
+        meta.write_text(meta.read_text().replace('mode = "metadata:curseforge"',
+                                                 'url = "https://cdn.modrinth.com/data/x/versions/y/create_connected-1.3.3-mc1.21.1.jar"'))
+        _git(self.pack, "commit", "-q", "-am", "Fetch Create: Connected from Modrinth")
+        self.assertEqual(self.manual_names(), [])
+
     def test_when_curseforge_does_not_answer_the_notes_list_stands_and_it_is_asked_again_later(self):
         calls = []
         def down(ids):

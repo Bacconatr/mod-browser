@@ -194,7 +194,9 @@ class PackCatalog:
                 "side": meta.get("side", "both"),
                 "kind": _KINDS.get(folder, "data pack"),
                 "source": _source(meta),
-                "manual": path in blocked,
+                # Listed in the notes, and still a CurseForge-only entry: one now fetched from
+                # Modrinth is not a download by hand any more.
+                "manual": path in blocked and _curseforge_file(meta) is not None,
                 # A metadata:curseforge entry's file; /api/setup asks CurseForge which of these it
                 # hands out no URL for (the author blocks outside downloads), so a player is told.
                 "curseforgeFile": _curseforge_file(meta),
