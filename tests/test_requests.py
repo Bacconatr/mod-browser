@@ -64,7 +64,8 @@ class RequestsCase(unittest.TestCase):
         self.queue = Queue(self.dir / "requests.db")
         self.addCleanup(self.queue._db.close)
         intake = Intake(self.queue, browse.resolve, FakeWhitelist(*whitelist), RateLimiter(limit, 60.0))
-        monitor = StatusMonitor(FakeServer(), address="play.example.com", max_age=0)
+        self.fake_server = FakeServer()
+        monitor = StatusMonitor(self.fake_server, address="play.example.com", max_age=0)
         self.app = App(monitor, PackCatalog(make_pack(self.dir / "pack"), max_age=0), browse=browse,
                        requests=Requests(queue=self.queue, intake=intake), admin_password=password)
         self.servers = Servers(self.app, public=("127.0.0.1", 0), admin=("127.0.0.1", 0)).start()

@@ -50,6 +50,9 @@ class Version:
     download_url: str | None
     blocked: bool
     deps: tuple[PlatformDep, ...] = field(default_factory=tuple)
+    #: The file's hash as the platform states it, with its algorithm ("sha512", "sha1"), for the pack's metafile.
+    file_hash: str | None = None
+    hash_format: str | None = None
 
 
 @dataclass(frozen=True)

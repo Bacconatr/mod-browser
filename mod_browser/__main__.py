@@ -11,6 +11,7 @@ from pathlib import Path
 from .curseforge import CurseForgeCatalog
 from .modrinth import ModrinthCatalog
 from .net import CachingHttp, FetchHttp
+from .applier import ApplyDesk
 from .intake import Intake
 from .pack import PackCatalog
 from .upstream import CurseForgeUpstream, UpstreamChecker
@@ -71,6 +72,15 @@ def setup_from_env(pack_dir: Path) -> Setup:
                  min_mb=int(env("PRISM_MIN_MB", "2048")), max_mb=int(env("PRISM_MAX_MB", "6144")))
 
 
+def applier_from_env(requests: Requests | None) -> ApplyDesk | None:
+    """OFF unless MOD_BROWSER_APPLIER=1. On, the app only records the owner's "apply" and hands batches
+    to the maintenance runner, which PVE runs on the guest (`python3 -m mod_browser.maintenance`); this
+    container never stops, starts or backs up anything (no Docker socket)."""
+    if env("APPLIER", "0") != "1" or requests is None:
+        return None
+    return ApplyDesk(requests.queue, enabled=True, requeue=requests.intake.requeue)
+
+
 def admin_password_from_env() -> str | None:
     path = Path(env("ADMIN_PASSWORD_FILE", "/run/secrets/aeronautics/admin"))
     return path.read_text().strip() if path.is_file() else None
@@ -95,8 +105,8 @@ def main() -> None:
     browse = browse_from_env()
     requests = requests_from_env(browse, catalog)
     upstream = upstream_from_env(requests, catalog)
-    app = App(monitor, catalog, name=env("SERVER_NAME", "Tel Aviv"), browse=browse,
-              requests=requests, admin_password=admin_password_from_env(),
+    app = App(monitor, catalog, name=env("SERVER_NAME", "Tel Aviv"), browse=browse, requests=requests,
+              admin_password=admin_password_from_env(), applier=applier_from_env(requests),
               setup=setup_from_env(pack_dir), upstream=upstream)
     servers = Servers(
         app,

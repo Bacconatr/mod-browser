@@ -40,7 +40,7 @@ This runs on the Internet-facing guest, so it holds as little as it can:
 
 - **No Docker socket.** Container state comes from DNS on the compose network.
 - **RCON is read-only.** The adapter refuses every command but `list` and
-  `neoforge tps` before connecting (`mod_browser/rcon.py`, `ALLOWED_COMMANDS`).
+  `neoforge tps` (not even `say`) before connecting (`mod_browser/rcon.py`, `ALLOWED_COMMANDS`).
   The RCON password is generated on the guest and never leaves it.
 - **No Discord or GitHub credential**, ever (spec story 40). PVE does the
   Discord side by polling the admin API.
@@ -72,11 +72,10 @@ docs/design-brief.md   the page's design contract (Impeccable); not served
 
 ### Seams for the next tickets
 
-- **Applier** (next ticket): reads `queue.all()` for `queued` requests and
-  moves them on (`testing`, `applying`, `applied`, `test-failed`,
-  `rolled-back`). The states and the record live in `queue.py`.
-- **`say` countdowns**: add the command to `ALLOWED_COMMANDS` with the
-  ticket that needs it.
+- **Applying**: `applier.py` (the app's half) and `maintenance.py` + `dockerhost.py`
+  (the runner on the guest). See "Applying requests".
+- **`say`** stays off the app's allowlist: in-game warnings are the runner's (`rcon-cli`
+  on the guest).
 
 ## Requests, the queue and /admin
 
@@ -96,6 +95,12 @@ or queued request with a fixed reason.
 | `GET /admin-api/v1/requests?since=<seq>`, `POST /admin-api/v1/requests[/<id>/<action>]` | PVE, on the loopback listener only; no password, because only `docker exec` reaches it |
 
 Actions: `approve`, `deny {reason}`, `override {version}`, `remove`, `requeue`.
+`approve` and `deny` also take an optional `fingerprint`: the sha256 that
+`/admin-api/v1/requests` serves with each entry (`fingerprint` in `queue.py`:
+requester, ownerAdded, mod, dependencies, versionId, added, kind; sorted, compact
+JSON), computed the same way as Homelab's `pve-mod-queue.py` (#1759). If the
+request no longer has it, the answer is 409 with the current one and nothing
+changes, so PVE never approves a request that changed after it posted it.
 `since` returns every request changed after that `seq`, so a poller never
 misses a change; the answer's `seq` is the next `since`.
 
@@ -106,6 +111,88 @@ requests per name, 200 open in all, bodies of 8 KiB. The queue is SQLite in
 `MOD_BROWSER_DATA_DIR`; without that directory, the whitelist file or browsing,
 requests are off and `/queue` and `/admin` are 404.
 
+## Applying requests: the owner asks, the maintenance runner does it (off)
+
+The app never stops, starts or backs up anything: it has no Docker socket and
+never gets one. It only records the owner's ask, and a separate **maintenance
+runner** (`mod_browser/maintenance.py`, real host adapter `dockerhost.py`) does
+the work. The runner runs on guest 120 as root, started by PVE over
+`pct exec 120` (Homelab's `aeronautics_maintenance` unit, which ships
+disabled). It reaches the app on the loopback admin API through
+`docker exec aeronautics-mod-browser python -m mod_browser.adminctl`, so request
+states still change in one place (`applier.py`, `ApplyDesk`).
+
+**Owner-triggered only.** `/admin` has "Apply what is queued when the server is
+empty", "Restart now with what is queued" (a one-minute warning in game) and
+"Cancel". There is no nightly slot. Behind `MOD_BROWSER_APPLIER=1`; while off,
+every apply route answers 409 and `/api/status` has no `apply`.
+
+One batch (everything queued, or an upstream update on its own), in order. Each
+phase is written to the runner's journal (`/var/lib/mod-maintenance/journal.json`)
+**before** its side effect:
+
+1. **Stage** the candidate on a branch in a worktree beside the live pack (one
+   commit per request, `Requested-by:` trailer, `index.toml`/`pack.toml` refreshed).
+   A request queued by an older build without file hashes is resolved again first.
+2. **Download**: packwiz-installer (the live server's own jar, in the same image)
+   fills a *copy* of `mods/` for the candidate. The live server is still up.
+3. **Recheck players** right before maintenance. *When empty*: anyone online, or
+   no answer while the server runs, defers the batch untouched (back to `queued`,
+   the ask stands). *Now*: "restarts in 1 minute" and "10 seconds" in game; a
+   failed warning does not stop an owner's "now", and the result says so.
+4. **Block joins**: new TCP connections to the game port are refused in
+   `DOCKER-USER` (comment `mod-maintenance`). *When empty* checks once more behind
+   the block and defers if anyone got in.
+5. **Stop** gracefully (the backup sidecar too). It must have exited 0 with
+   "All dimensions are saved" in its log, or the run halts.
+6. **Cold backup** of `world/` (without the regenerable `DistantHorizons.sqlite`)
+   and the server files a candidate can change (`mods`, `config`, `packwiz.json`,
+   ...), to `/mnt/aeronautics-backups/maintenance/batch-N/`, verified with
+   `tar --compare` and checksummed. No backup, no change.
+7. **Test boot** of the candidate on a disposable copy whose world is extracted
+   *from that backup* (which proves it restores), with no published port and no
+   RCON secret. It fits in memory only because the live server is stopped. It
+   must log Done and still be up 15 s later. A timeout kills it.
+8. **Clean up** the test container and copy. If that cannot be confirmed, the run
+   halts with the live server stopped: it would not fit beside a leftover.
+9. **Promote**: merge the branch into the live pack, swap in the downloaded mods.
+10. **Start** and require **fresh-boot evidence**: Done in `docker logs --since`
+    *this* start, and the container still being that start (a restart by anyone
+    else is not evidence). Then joins open and the requests are `applied`.
+
+**On failure.** Before promote, the pack and world were never changed: the old
+server is started (fresh Done required) and the requests are `test-failed`.
+After promote: stop, revert the merge (the pack's tree must equal the one the run
+started from), move the failed world and server files aside to
+`/opt/aeronautics/maintenance/failed-N/` (kept, never deleted), restore the
+verified backup, start, fresh Done, and only then `rolled-back`. Joins stay
+blocked until a boot is verified. Anything that cannot be verified **halts**.
+
+**Interrupted runs.** Before the stop, the next tick releases the batch and
+tries again. From the stop on, the journal says "needs recovery", the status
+page shows it, and nothing is claimed until the owner runs
+`mod-maintenance recover`, which verifies before it records anything: a new
+server is accepted only if the pack is the merge and the very start the runner
+issued logged Done. Otherwise, after promotion or when joins may have reopened,
+recovery halts for inspection: a reboot may have let players change the world,
+so it does not automatically restore an older backup. Requests are never
+marked `applied` or `rolled-back` without that evidence; an outcome the app did
+not hear (it was down) is reported first on the next tick.
+
+Known limits: a failed batch fails every request in it (no bisecting); two
+requests in one batch that conflict with each other are caught by the test boot,
+not before; a manual roll back of an applied batch is not built; between promote
+and the start, `/pack/` already serves the new pack (the server is down then,
+and a rollback is picked up by the next launch); the restored world has no
+Distant Horizons LODs (they regenerate).
+
+**Upstream updates** (`kind = "upstream"`, see "Upstream releases") carry `add`, `change` and `remove` entries; `change` and `remove` act on the metafile they name (and nothing outside `mods/`), a removed metafile leaves `index.toml`, and an upstream update is applied **on its own**: a friend's request computed against the old pack waits for the next batch.
+
+Known limits: a failed batch fails every request in it (no bisecting for the
+culprit; the owner re-adds them one at a time with `add directly`); requests in
+one batch are resolved against the pack individually, so two that conflict with
+each other are caught by the test boot, not before; a manual "roll back" of an
+already-applied batch is not built.
 ## Setting up the game: the Prism instance (`/setup`)
 
 `/prism/instance.zip` is a Prism Launcher instance built on request from the
@@ -160,9 +247,9 @@ the last result and error, and `POST .../upstream/check` (or the button on
 
 Pack operations: the request's `added` holds `{op: add | change | remove, ...}`
 entries with what a metafile needs (`change` and `remove` name the pack metafile
-they act on, and `change` keeps its side). **This PR only files them.** Writing
-them into the pack is the applier's job (#9, owner-gated); until it is merged
-and on, an approved upstream update just sits `queued`. Added mods come in
+they act on, and `change` keeps its side). Writing
+them into the pack is the applier's job ("The applier"); until that is on, an
+approved upstream update just sits `queued`. Added mods come in
 with `side = "both"` because CurseForge's manifest does not say; the test boot
 is what catches a client-only mod loaded on the server.
 
@@ -180,6 +267,7 @@ is what catches a client-only mod loaded on the server.
 | `MOD_BROWSER_SERVER_NAME`, `_SERVER_ADDRESS` | `Tel Aviv`, `play.example.com` |
 | `MOD_BROWSER_STATUS_MAX_AGE` | `10` (seconds) |
 | `MOD_BROWSER_TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` (whose `X-Forwarded-For` is believed) |
+| `MOD_BROWSER_APPLIER` | `0` (see "Applying requests": the app records asks; the runner on the guest does the work) |
 | `MOD_BROWSER_PUBLIC_URL` | `https://mods.example.com` (the pack URL in the instance is `<this>/pack/pack.toml`) |
 | `MOD_BROWSER_BOOTSTRAP_JAR` | `/srv/prism/packwiz-installer-bootstrap.jar` |
 | `MOD_BROWSER_PRISM_MIN_MB` / `_MAX_MB` | `2048` / `6144` |

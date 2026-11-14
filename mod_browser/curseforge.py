@@ -65,6 +65,7 @@ class CurseForgeCatalog:
             release = f.get("releaseType")
             url = f.get("downloadUrl") or None
             name = str(f.get("fileName") or "")
+            sha1 = next((h.get("value") for h in f.get("hashes") or [] if h.get("algo") == 1), None)
             out.append(Version(
                 source="curseforge",
                 project_id=project_id,
@@ -78,5 +79,7 @@ class CurseForgeCatalog:
                 blocked=url is None,
                 deps=tuple(PlatformDep("curseforge", str(d["modId"]), _REL[d["relationType"]])
                            for d in f.get("dependencies") or [] if d.get("relationType") in _REL),
+                file_hash=sha1,
+                hash_format="sha1" if sha1 else None,
             ))
         return sorted(out, key=lambda v: v.published_at, reverse=True)

@@ -57,6 +57,8 @@ def to_version(v: dict[str, Any]) -> Version:
         download_url=file.get("url") or None,
         blocked=False,
         deps=deps,
+        file_hash=(file.get("hashes") or {}).get("sha512"),
+        hash_format="sha512" if (file.get("hashes") or {}).get("sha512") else None,
     )
 
 

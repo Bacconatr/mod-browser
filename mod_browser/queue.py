@@ -15,6 +15,7 @@ is data about a request, not a promise: the intake re-resolves on approval.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -23,8 +24,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+#: Still the owner's to decide on: can be approved, denied, overridden or removed.
 OPEN_STATES = ("pending", "approved", "queued")
-STATES = (*OPEN_STATES, "denied")
+#: Being applied: nothing changes it from outside until the applier finishes.
+BUSY_STATES = ("testing", "applying")
+#: Everything not yet finished, for "is this mod already asked for".
+ACTIVE_STATES = (*OPEN_STATES, *BUSY_STATES)
+FINISHED_STATES = ("applied", "test-failed", "rolled-back", "denied")
+STATES = (*ACTIVE_STATES, *FINISHED_STATES)
+_ACTIVE_SQL = "(" + ",".join(f"'{s}'" for s in ACTIVE_STATES) + ")"
 
 
 class InvalidTransition(Exception):
@@ -54,6 +62,7 @@ class Request:
     note: str | None
     created_at: str
     updated_at: str
+    batch: int | None = None
     #: "mod" (a friend's ask or the owner's own) or "upstream" (a new All of Create: Aeronautics release).
     kind: str = "mod"
     #: Kind-specific data: for "upstream", the pack commit the difference was computed against, and the difference.
@@ -75,8 +84,22 @@ class Request:
         }
 
     def admin(self) -> dict[str, Any]:
-        return {**self.public(), "seq": self.seq, "note": self.note, "versionId": self.version_id,
-                "added": self.added, "kind": self.kind, "meta": self.meta}
+        entry = {**self.public(), "seq": self.seq, "note": self.note, "versionId": self.version_id,
+                 "added": self.added, "batch": self.batch, "kind": self.kind, "meta": self.meta}
+        return {**entry, "fingerprint": fingerprint(entry)}
+
+
+#: What an approval or denial is about. Homelab's pve-mod-queue.py (#1759) hashes the same fields of the
+#: same feed entry, so it can say "approve THIS request" and the site refuses if it changed since.
+FINGERPRINT_FIELDS = ("requester", "ownerAdded", "mod", "dependencies", "versionId", "added", "kind")
+
+
+def fingerprint(entry: dict[str, Any]) -> str:
+    """sha256 of the untruncated fields in FINGERPRINT_FIELDS of an admin feed entry, byte for byte the
+    way PVE computes it: sorted keys, compact separators, non-ASCII kept, UTF-8."""
+    decided = {k: entry.get(k) for k in FINGERPRINT_FIELDS}
+    blob = json.dumps(decided, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    return hashlib.sha256(blob.encode("utf-8", "replace")).hexdigest()
 
 
 _SCHEMA = """
@@ -98,6 +121,7 @@ CREATE TABLE IF NOT EXISTS requests (
   note TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  batch INTEGER,
   kind TEXT NOT NULL DEFAULT 'mod',
   meta TEXT
 );
@@ -118,6 +142,8 @@ class Queue:
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_SCHEMA)
         have = {r["name"] for r in self._db.execute("PRAGMA table_info(requests)")}
+        if "batch" not in have:
+            self._db.execute("ALTER TABLE requests ADD COLUMN batch INTEGER")  # a queue made before the applier
         if "kind" not in have:  # a queue made before upstream updates
             self._db.execute("ALTER TABLE requests ADD COLUMN kind TEXT NOT NULL DEFAULT 'mod'")
         if "meta" not in have:
@@ -129,7 +155,7 @@ class Queue:
                        source=row["source"], project_id=row["project_id"], version_id=row["version_id"],
                        mod_name=row["mod_name"], version_number=row["version_number"], channel=row["channel"],
                        side=row["side"], added=json.loads(row["added"]), state=row["state"], reason=row["reason"],
-                       note=row["note"], created_at=row["created_at"], updated_at=row["updated_at"],
+                       note=row["note"], created_at=row["created_at"], updated_at=row["updated_at"], batch=row["batch"],
                        kind=row["kind"], meta=json.loads(row["meta"]) if row["meta"] else None)
 
     def get(self, request_id: int) -> Request:
@@ -147,17 +173,17 @@ class Queue:
     def open_for(self, requester: str) -> int:
         with self._lock:
             return self._db.execute(
-                "SELECT COUNT(*) FROM requests WHERE lower(requester) = lower(?) AND state IN ('pending','approved','queued')",
+                "SELECT COUNT(*) FROM requests WHERE lower(requester) = lower(?) AND state IN " + _ACTIVE_SQL,
                 (requester,)).fetchone()[0]
 
     def open_count(self) -> int:
         with self._lock:
-            return self._db.execute("SELECT COUNT(*) FROM requests WHERE state IN ('pending','approved','queued')").fetchone()[0]
+            return self._db.execute("SELECT COUNT(*) FROM requests WHERE state IN " + _ACTIVE_SQL).fetchone()[0]
 
     def open_for_project(self, source: str, project_id: str) -> Request | None:
         with self._lock:
             row = self._db.execute(
-                "SELECT * FROM requests WHERE source = ? AND project_id = ? AND state IN ('pending','approved','queued') ORDER BY id LIMIT 1",
+                "SELECT * FROM requests WHERE source = ? AND project_id = ? AND state IN " + _ACTIVE_SQL + " ORDER BY id LIMIT 1",
                 (source, project_id)).fetchone()
         return self._row(row) if row else None
 
@@ -238,3 +264,44 @@ class Queue:
                 version_id=added[0]["versionId"], version_number=added[0]["versionNumber"],
                 channel=added[0]["channel"], side=snapshot.get("side", current.side),
                 added=json.dumps(added), note=None)
+
+    # ---- the applier's side ----
+    def queued(self) -> list[Request]:
+        """Requests waiting to be applied, oldest first."""
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM requests WHERE state = 'queued' ORDER BY id").fetchall()
+        return [self._row(r) for r in rows]
+
+    def next_batch_id(self) -> int:
+        with self._lock:
+            return (self._db.execute("SELECT COALESCE(MAX(batch), 0) FROM requests").fetchone()[0]) + 1
+
+    def in_flight(self) -> list[Request]:
+        """Requests a restart interrupted: testing or applying, with no applier running them."""
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM requests WHERE state IN ('testing','applying') ORDER BY id").fetchall()
+        return [self._row(r) for r in rows]
+
+    def advance(self, ids: list[int], allowed: tuple[str, ...], state: str, *, batch: int | None = None,
+                reason: str | None = None) -> list[Request]:
+        """Move a whole batch to `state`, or none of it if any member is not in an allowed state."""
+        with self._lock:
+            current = [self.get(i) for i in ids]
+            for r in current:
+                if r.state not in allowed:
+                    raise InvalidTransition(f"request {r.id} is {r.state}, not {' or '.join(allowed)}")
+            self._db.execute("BEGIN")
+            try:
+                for r in current:
+                    sets = {"state": state, "seq": self._next_seq(), "updated_at": self._clock()}
+                    if batch is not None:
+                        sets["batch"] = batch
+                    if reason is not None:
+                        sets["reason"] = reason
+                    cols = ", ".join(f"{k} = ?" for k in sets)
+                    self._db.execute(f"UPDATE requests SET {cols} WHERE id = ?", (*sets.values(), r.id))
+                self._db.execute("COMMIT")
+            except BaseException:
+                self._db.execute("ROLLBACK")
+                raise
+            return [self.get(i) for i in ids]

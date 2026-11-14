@@ -17,7 +17,8 @@ first lines is the answer, and none in reach means unknown, never midnight.
 
 RCON commands are allowlisted. The app holds the RCON password, which can
 run any console command, so the adapter itself refuses everything but the
-read-only commands the page needs. A later ticket adds `say` for countdowns.
+read-only commands the page needs. In-game warnings before a restart are the maintenance
+runner's, sent with `rcon-cli` on the guest, never from this Internet-facing app.
 """
 
 from __future__ import annotations
