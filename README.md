@@ -17,6 +17,8 @@ a commit of this repo. Bump the pin in a Homelab PR, like an image tag.
 | Who is online, the max | RCON `list` |
 | TPS, ms per tick | RCON `neoforge tps` (the `Overall` line) |
 | Last restart | The launcher's first line in `logs/latest.log`, or, after log4j's midnight roll, in the newest rolled `YYYY-MM-DD-N.log.gz`; unknown rather than a wrong time when none is in reach |
+| Booting since, usually ready by | While `starting`: the same start time, plus how long a boot usually takes, learned from the boots this app watched finish (`DATA_DIR/boot-times.json`, 4 min until one is). A boot past that reads as overdue, not a moving estimate; a start older than an hour is the previous run's and shows no estimate |
+| Down since | While `down`: the first time this app saw the container stopped |
 | Mods: name, jar, side, source | The packwiz metafiles (`*.pw.toml`) in the pack repo; the search box asks `/api/mods?q=`, so matching lives on the server only |
 | Version | Parsed from the jar's filename (packwiz stores no version string) |
 | Added by / added on | The pack repo's git history; see below |
@@ -33,6 +35,10 @@ first date their note mentions.
 (10 s) and refreshed on the next request; the page polls every 15 s. A
 stopped container drops off the compose network, its name stops resolving,
 and the next check reads "down".
+
+**The page's own restarts.** A 502, 503 or 504 with no JSON is Caddy answering
+for an app that is restarting (or a guest that is down): the status page says
+"The site is restarting" and the find page retries a read once.
 
 ## No Docker socket, and RCON is allowlisted
 

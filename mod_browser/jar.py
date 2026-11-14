@@ -4,13 +4,17 @@ Read straight from the jar's `META-INF/neoforge.mods.toml` (or `mods.toml`),
 because Modrinth recognises only 177 of the pack's 213 jars. Only the
 central directory and a few small entries are read, never the whole archive,
 and every read is capped, so a hostile jar from a public search cannot
-exhaust memory.
+exhaust memory. A nested jar (jar-in-jar) is copied in chunks to a spooled
+temporary file, never held whole in memory: a "bundled" jar nests jars of
+30 MiB or more, and holding them as bytes cost 110 MiB of a 128 MiB
+container for one 34 MiB jar (measured on guest 120, 2026-11-14), which
+the kernel answered by killing the app.
 """
 
 from __future__ import annotations
 
-import io
 import re
+import tempfile
 import tomllib
 import zipfile
 from dataclasses import dataclass, field
@@ -22,6 +26,9 @@ _MAX_SMALL = 256 * 1024
 _MAX_NESTED_JAR = 64 * 1024 * 1024
 _MAX_NESTED_COUNT = 16
 _MAX_DEPTH = 2
+#: A nested jar stays in memory only up to this; past it, the spooled file is on disk.
+_SPOOL_IN_MEMORY = 1024 * 1024
+_CHUNK = 64 * 1024
 
 
 class JarError(Exception):
@@ -58,6 +65,26 @@ def _read(zf: zipfile.ZipFile, name: str, limit: int) -> bytes:
     if len(data) > limit:
         raise JarError(f"{name} is too large")
     return data
+
+
+def _spooled(zf: zipfile.ZipFile, name: str, limit: int) -> IO[bytes]:
+    """The entry as a seekable file, copied in chunks and capped. Caller closes it."""
+    if zf.getinfo(name).file_size > limit:
+        raise JarError(f"{name} is too large")
+    out = tempfile.SpooledTemporaryFile(max_size=_SPOOL_IN_MEMORY)
+    try:
+        with zf.open(name) as entry:
+            total = 0
+            while chunk := entry.read(_CHUNK):
+                total += len(chunk)
+                if total > limit:  # the declared size can lie; the bytes cannot
+                    raise JarError(f"{name} is too large")
+                out.write(chunk)
+        out.seek(0)
+        return out
+    except BaseException:
+        out.close()
+        raise
 
 
 def _manifest_version(text: str) -> str:
@@ -126,8 +153,11 @@ def _nested(zf: zipfile.ZipFile, names: set[str], depth: int) -> list[ProvidedMo
         if not isinstance(path, str) or path not in names:
             continue
         try:
-            inner = read_jar_info(io.BytesIO(_read(zf, path, _MAX_NESTED_JAR)), depth + 1)
-        except (JarError, zipfile.BadZipFile):
+            with _spooled(zf, path, _MAX_NESTED_JAR) as nested:
+                inner = read_jar_info(nested, depth + 1)
+        # OSError: past 1 MiB the copy is on disk, which can be full. One nested jar
+        # lost is one provided id lost, never the outer jar and everything it provides.
+        except (JarError, zipfile.BadZipFile, OSError):
             continue
         if inner:
             found.extend(inner.provides)

@@ -99,6 +99,7 @@ body:has(.band[data-state="online"]) { --state: var(--color-green); }
 body:has(.band[data-state="starting"]) { --state: var(--color-peach); }
 body:has(.band[data-state="down"]) { --state: var(--color-red); }
 body:has(.band[data-state="unknown"]) { --state: var(--color-mauve); }
+body:has(.band[data-state="site"]) { --state: var(--color-peach); }
 
 ::selection { background: var(--accent); color: var(--accent-ink); }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; transition: none; }
@@ -191,9 +192,9 @@ p { margin: 0; }
   background: var(--state);
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--state) 22%, transparent), 0 0 22px color-mix(in oklab, var(--state) 70%, transparent);
 }
-.band[data-state="starting"] .lamp { animation: breathe 1.6s var(--ease) infinite; }
+.band[data-state="starting"] .lamp, .band[data-state="site"] .lamp { animation: breathe 1.6s var(--ease) infinite; }
 @keyframes breathe { 50% { opacity: 0.45; } }
-@media (prefers-reduced-motion: reduce) { .band[data-state="starting"] .lamp { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .band[data-state="starting"] .lamp, .band[data-state="site"] .lamp { animation: none; } }
 .detail { margin-top: 0.6rem; max-width: 60ch; color: var(--ink-2); }
 .detail:empty { display: none; }
 

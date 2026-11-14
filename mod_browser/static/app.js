@@ -10,6 +10,7 @@ const STATES = {
   starting: { label: "Starting up", detail: "The server is booting or restarting. It usually takes a few minutes." },
   down: { label: "Down or restarting", detail: "The server isn't running right now. It comes back by itself after a restart; if it stays down, tell the owner." },
   unknown: { label: "Can't reach the status service", detail: "This page couldn't ask the server for its state. It tries again every 15 seconds." },
+  site: { label: "The site is restarting", detail: "This page's service, or the machine it runs on, is restarting. If it is only the page, it is back in under a minute. This page tries again every 15 seconds." },
 };
 
 function el(tag, props = {}, children = []) {
@@ -40,24 +41,39 @@ const day = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short"
 // ---- status ----
 let lastStatus = null;
 
+const clockOf = (at) => at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const valid = (iso) => { const at = iso ? new Date(iso) : null; return at && !Number.isNaN(at.getTime()) ? at : null; };
+
 // "Back online around 4:12 AM (in about 6 min)": the server's estimate, learned from past restarts.
+// A batch being applied has its own estimate; any other boot (a crash, a host reboot) uses `boot`.
+const inMinutes = (at) => Math.max(1, Math.round((at.getTime() - Date.now()) / 60000));
+
 function backOnline(status) {
-  const by = status && status.apply && status.apply.backOnlineBy;
-  if (!by) return "";
-  const at = new Date(by);
-  if (Number.isNaN(at.getTime())) return "";
-  const mins = Math.max(1, Math.round((at.getTime() - Date.now()) / 60000));
-  const clock = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  return `Back online around ${clock} (in about ${mins} min).`;
+  const batch = valid(status && status.apply && status.apply.backOnlineBy);
+  if (batch) return `Back online around ${clockOf(batch)} (in about ${inMinutes(batch)} min).`;
+  const boot = status && status.state === "starting" ? status.boot : null;
+  const since = valid(boot && boot.since);
+  if (!since) return "";
+  const began = `Booting since ${clockOf(since)} (${ago(boot.since)}).`;
+  const usual = Math.max(1, Math.round(boot.typicalSeconds / 60));
+  if (boot.overdue) return `${began} That is longer than the usual ${usual} min; if it stays this way, tell the owner.`;
+  const ready = valid(boot.readyBy);
+  return ready ? `${began} Usually ready around ${clockOf(ready)} (in about ${inMinutes(ready)} min).` : began;
 }
 
-function renderStatus(status) {
-  const state = status ? status.state : "unknown";
+// "Down since 2:16 AM (3 min ago)": the first time the site saw it stopped.
+function downSince(status) {
+  const at = status && status.state === "down" && valid(status.downSince);
+  return at ? `Down since ${clockOf(at)} (${ago(status.downSince)}).` : "";
+}
+
+function renderStatus(status, unreachable = "unknown") {
+  const state = status ? status.state : unreachable;
   const band = document.querySelector(".band");
   band.dataset.state = state;
   $("state-label").textContent = STATES[state].label;
   const apply = status && status.apply && status.apply.phase !== "idle" ? status.apply.detail : "";
-  $("state-detail").textContent = [STATES[state].detail, apply, backOnline(status)].filter(Boolean).join(" ");
+  $("state-detail").textContent = [STATES[state].detail, apply, backOnline(status), downSince(status)].filter(Boolean).join(" ");
   $("checked").textContent = status && status.checkedAt ? `checked ${ago(status.checkedAt)}` : "";
   if (status && status.address) $("address").value = status.address;
 
@@ -90,6 +106,8 @@ function renderStatus(status) {
 async function refreshStatus() {
   try {
     const response = await fetch("/api/status", { cache: "no-store" });
+    // 502/503/504 come from the proxy in front of the app: the app itself is restarting.
+    if ([502, 503, 504].includes(response.status)) { renderStatus(null, "site"); return; }
     if (!response.ok) throw new Error(String(response.status));
     lastStatus = await response.json();
     renderStatus(lastStatus);

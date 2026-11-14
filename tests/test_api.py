@@ -8,12 +8,13 @@ import tempfile
 import unittest
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Callable
 from zoneinfo import ZoneInfo
 
 from mod_browser.pack import PackCatalog, PackUnreadable
-from mod_browser.status import StatusMonitor, parse_tps
+from mod_browser.status import DEFAULT_BOOT_SECONDS, BootTimes, StatusMonitor, parse_tps
 from mod_browser.web import App, Servers
 from tests.fakes import LATER_MOD, FakeServer, add_mod, make_pack
 
@@ -95,6 +96,76 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(monitor.snapshot()["state"], "online")
         now[0] = 110.0
         self.assertEqual(monitor.snapshot()["state"], "down")
+
+    # ---- any boot, not only a batch: when it began and when it is usually ready ----
+    def status_at(self, now, boots=None) -> Callable[[], dict]:
+        """/api/status from an app whose clock is now[0], read over HTTP like the page does."""
+        monitor = StatusMonitor(self.server, address="x", max_age=0, now=lambda: now[0], boots=boots)
+        servers = Servers(App(monitor, PackCatalog(self.pack, max_age=0)),
+                          public=("127.0.0.1", 0), admin=("127.0.0.1", 0)).start()
+        self.addCleanup(servers.stop)
+        base = f"http://127.0.0.1:{servers.public.server_address[1]}"
+        return lambda: self.json("/api/status", base)
+
+    def test_a_boot_outside_a_batch_says_when_it_began_and_when_it_is_usually_ready(self):
+        start = datetime(2026, 11, 14, 7, 16, 57, tzinfo=timezone.utc)
+        self.server.rcon_up, self.server.started = False, start
+        boot = self.status_at([start + timedelta(seconds=60)])()["boot"]
+        self.assertEqual(boot, {"since": "2026-11-14T07:16:57+00:00", "typicalSeconds": round(DEFAULT_BOOT_SECONDS),
+                                "readyBy": (start + timedelta(seconds=DEFAULT_BOOT_SECONDS)).isoformat(timespec="seconds"),
+                                "overdue": False})
+
+    def test_a_boot_past_its_usual_length_is_overdue_not_a_moving_estimate(self):
+        start = datetime(2026, 11, 14, 7, 0, tzinfo=timezone.utc)
+        self.server.rcon_up, self.server.started = False, start
+        boot = self.status_at([start + timedelta(minutes=40)])()["boot"]
+        self.assertTrue(boot["overdue"])
+        self.assertIsNone(boot["readyBy"])
+
+    def test_the_previous_runs_start_time_is_not_shown_as_this_boots(self):
+        # Docker restarted the container; the new JVM has not rolled latest.log yet.
+        self.server.rcon_up = False
+        self.server.started = datetime(2026, 11, 12, 3, 2, tzinfo=timezone.utc)
+        boot = self.status_at([datetime(2026, 11, 14, 7, 0, tzinfo=timezone.utc)])()["boot"]
+        self.assertIsNone(boot["since"])
+        self.assertIsNone(boot["readyBy"])
+
+    def test_a_watched_boot_teaches_the_estimate_and_it_survives_a_restart_of_the_app(self):
+        path = Path(self.tmp.name) / "boot-times.json"
+        start = datetime(2026, 11, 14, 7, 0, tzinfo=timezone.utc)
+        now = [start + timedelta(seconds=90)]
+        self.server.rcon_up, self.server.started = False, start
+        status = self.status_at(now, BootTimes(path))
+        self.assertEqual(status()["state"], "starting")
+        self.server.rcon_up, now[0] = True, start + timedelta(seconds=120)  # ready after 120 s
+        self.assertEqual(status()["state"], "online")
+        learned = (DEFAULT_BOOT_SECONDS + 120) / 2
+        self.server.rcon_up, self.server.started = False, start + timedelta(hours=1)
+        later = self.status_at([start + timedelta(hours=1, seconds=10)], BootTimes(path))  # a new process
+        self.assertEqual(later()["boot"]["typicalSeconds"], round(learned))
+
+    def test_a_boot_nobody_watched_finish_teaches_nothing(self):
+        # Seen starting a minute in, then nobody looked until 50 minutes later.
+        path = Path(self.tmp.name) / "boot-times.json"
+        start = datetime(2026, 11, 14, 7, 0, tzinfo=timezone.utc)
+        now = [start + timedelta(minutes=1)]
+        self.server.rcon_up, self.server.started = False, start
+        status = self.status_at(now, BootTimes(path))
+        status()
+        self.server.rcon_up, now[0] = True, start + timedelta(minutes=50)
+        self.assertEqual(status()["state"], "online")
+        self.assertFalse(path.exists())
+
+    def test_a_stopped_server_says_since_when_and_drops_it_once_it_runs(self):
+        t0 = datetime(2026, 11, 14, 7, 0, tzinfo=timezone.utc)
+        now = [t0]
+        status = self.status_at(now)
+        self.server.running = False
+        self.assertEqual(status()["downSince"], "2026-11-14T07:00:00+00:00")
+        now[0] = t0 + timedelta(minutes=3)
+        self.assertEqual(status()["downSince"], "2026-11-14T07:00:00+00:00")  # not reset
+        self.server.running = True
+        self.assertNotIn("downSince", status())
 
     def test_only_read_only_commands_reach_rcon(self):
         self.json("/api/status")

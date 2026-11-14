@@ -8,8 +8,11 @@ hand-written or SYNTHETIC.
 
 from __future__ import annotations
 
+import io
 import json
+import os
 import tempfile
+import zipfile
 import unittest
 import urllib.error
 import urllib.request
@@ -209,6 +212,24 @@ class DependencyTest(BrowseCase):
         names = [a["name"] for a in r["added"]]
         self.assertFalse(any("statue menus" in n.lower() for n in names), names)
         self.assertEqual(names, ["Straw Statues", "Puzzles Lib"])
+
+    def test_a_bundled_jar_larger_than_the_in_memory_spool_is_still_read_for_what_it_bundles(self):
+        # A "bundled" jar nests jars of 30 MiB or more (create-aeronautics-bundled on
+        # guest 120). Past 1 MiB a nested jar is read from a file on disk, not memory.
+        padded = io.BytesIO()
+        with zipfile.ZipFile(padded, "w", zipfile.ZIP_STORED) as zf:
+            with zipfile.ZipFile(io.BytesIO(build_jar(toml("statuemenus"), "21.1.0"))) as small:
+                for name in small.namelist():
+                    zf.writestr(name, small.read(name))
+            zf.writestr("assets/padding.bin", os.urandom(3 * 1024 * 1024))
+        straw = build_jar(toml("straw-statues"), "21.1.0", nested={"statuemenus-neoforge-21.1.0.jar": padded.getvalue()})
+        self.start(installed=BASE_INSTALLED, jars={
+            modrinth_url("2fltysAl", "C7j9WWVp"): straw,
+            puzzles_url(): build_jar(mods_toml("puzzleslib", puzzles_version(), [{"modId": "neoforge"}])),
+        })
+        _, r = self.get("/api/catalog/resolve?source=modrinth&id=2fltysAl")
+        self.assertEqual(r["status"], "ok", r["problems"])
+        self.assertEqual([a["name"] for a in r["added"]], ["Straw Statues", "Puzzles Lib"])
 
     def test_still_checks_a_second_stricter_range_for_a_mod_another_dependency_already_asked_for(self):
         # SYNTHETIC: Rival Mod needs helper (any) and puzzleslib; puzzleslib needs helper >= 9.
