@@ -173,7 +173,9 @@ tries again. From the stop on, the journal says "needs recovery", the status
 page shows it, and nothing is claimed until the owner runs
 `mod-maintenance recover`, which verifies before it records anything: a new
 server is accepted only if the pack is the merge and the very start the runner
-issued logged Done; otherwise it rolls back to the backup. Requests are never
+issued logged Done. Otherwise, after promotion or when joins may have reopened,
+recovery halts for inspection: a reboot may have let players change the world,
+so it does not automatically restore an older backup. Requests are never
 marked `applied` or `rolled-back` without that evidence; an outcome the app did
 not hear (it was down) is reported first on the next tick.
 
