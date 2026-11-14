@@ -67,6 +67,13 @@ def _source(meta: dict[str, Any]) -> dict[str, Any]:
     return {"site": "Direct download", "url": None}
 
 
+def _curseforge_file(meta: dict[str, Any]) -> str | None:
+    if (meta.get("download") or {}).get("mode") != "metadata:curseforge":
+        return None
+    file_id = ((meta.get("update") or {}).get("curseforge") or {}).get("file-id")
+    return str(file_id) if isinstance(file_id, int) else None
+
+
 def extras_from_notes(notes: str) -> dict[str, str | None]:
     """Metafile path -> the first date its note mentions, for the pre-packwiz extras."""
     section = _EXTRA_SECTION.search(notes)
@@ -186,6 +193,9 @@ class PackCatalog:
                 "kind": _KINDS.get(folder, "data pack"),
                 "source": _source(meta),
                 "manual": path in blocked,
+                # A metadata:curseforge entry's file; /api/setup asks CurseForge which of these it
+                # hands out no URL for (the author blocks outside downloads), so a player is told.
+                "curseforgeFile": _curseforge_file(meta),
                 "origin": origin,
                 "addedBy": by,
                 "addedOn": on,

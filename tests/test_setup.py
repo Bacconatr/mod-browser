@@ -23,7 +23,7 @@ PACK_URL = "https://mods.example.com/pack/pack.toml"
 
 
 class SetupCase(unittest.TestCase):
-    def start(self, jar: bool = True, later_mod: bool = False) -> None:
+    def start(self, jar: bool = True, later_mod: bool = False, blocked_files=None) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.dir = Path(tmp.name)
@@ -41,7 +41,8 @@ class SetupCase(unittest.TestCase):
             jar_path.write_bytes(BOOTSTRAP)
         monitor = StatusMonitor(FakeServer(), address="play.example.com", max_age=0)
         self.app = App(monitor, PackCatalog(self.pack, max_age=0),
-                       setup=Setup(files=PackFiles(self.pack), pack_url=PACK_URL, bootstrap_jar=jar_path, min_mb=2048, max_mb=6144))
+                       setup=Setup(files=PackFiles(self.pack), pack_url=PACK_URL, bootstrap_jar=jar_path, min_mb=2048, max_mb=6144,
+                                   blocked_files=blocked_files))
         self.servers = Servers(self.app, public=("127.0.0.1", 0), admin=("127.0.0.1", 0)).start()
         self.addCleanup(self.servers.stop)
         self.base = f"http://127.0.0.1:{self.servers.public.server_address[1]}"
@@ -143,6 +144,30 @@ class ManualDownloadTest(SetupCase):
         self.assertEqual([m["name"] for m in manual], ["Create: Connected"])
         self.assertEqual(manual[0]["filename"], "create_connected-1.3.3-mc1.21.1.jar")
         self.assertTrue(manual[0]["url"].startswith("https://www.curseforge.com/"))
+
+    def test_curseforge_files_it_hands_out_no_url_for_are_listed_even_when_the_notes_do_not_name_them(self):
+        # The live pack's NOTES.md names its 13 blocked mods in prose, with no metafile paths,
+        # so the page listed none (2026-11-14); CurseForge itself says which ones are blocked.
+        asked = []
+        def blocked(ids):
+            asked.append(sorted(ids))
+            return {"1"}  # the shader pack's file
+        self.start(blocked_files=blocked)
+        names = [m["name"] for m in self.json("/api/setup")["manual"]]
+        self.assertEqual(names, ["Complementary Shaders - Reimagined", "Create: Connected"])
+        self.json("/api/setup")
+        self.assertEqual(len(asked), 1, "asked once per pack commit, not per page view")
+        self.assertIn("1", asked[0])
+
+    def test_when_curseforge_does_not_answer_the_notes_list_stands_and_the_next_view_asks_again(self):
+        calls = []
+        def down(ids):
+            calls.append(1)
+            raise OSError("api.curseforge.com: timed out")
+        self.start(blocked_files=down)
+        self.assertEqual([m["name"] for m in self.json("/api/setup")["manual"]], ["Create: Connected"])
+        self.json("/api/setup")
+        self.assertEqual(len(calls), 2)
 
     def test_the_server_only_mods_are_marked_server_so_the_client_side_installer_skips_them(self):
         self.start()

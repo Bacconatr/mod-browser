@@ -34,11 +34,9 @@ def browse_from_env() -> Browse | None:
     if not mods_dir.is_dir():
         return None
     http = CachingHttp(FetchHttp())
-    key_file = Path(env("CURSEFORGE_API_KEY_FILE", "/run/secrets/aeronautics/curseforge"))
-    key = key_file.read_text().strip() if key_file.is_file() else ""
     catalog = CompositeCatalog(
         ModrinthCatalog(http),
-        CurseForgeCatalog(http, key) if key else None,
+        curseforge_from_env(http),
         curseforge_search=env("CURSEFORGE_SEARCH", "0") == "1",
     )
     return Browse(catalog=catalog, jars=HttpJars(http), installed=DirInstalled(mods_dir))
@@ -71,11 +69,19 @@ def upstream_from_env(requests: Requests | None, catalog: PackCatalog) -> Upstre
     return UpstreamChecker(requests.queue, source, catalog, tz=env("LOG_TZ", "America/New_York"))
 
 
+def curseforge_from_env(http: CachingHttp) -> CurseForgeCatalog | None:
+    key_file = Path(env("CURSEFORGE_API_KEY_FILE", "/run/secrets/aeronautics/curseforge"))
+    key = key_file.read_text().strip() if key_file.is_file() else ""
+    return CurseForgeCatalog(http, key) if key else None
+
+
 def setup_from_env(pack_dir: Path) -> Setup:
     public = env("PUBLIC_URL", "https://mods.example.com").rstrip("/")
     jar = env("BOOTSTRAP_JAR", "/srv/prism/packwiz-installer-bootstrap.jar")
+    curseforge = curseforge_from_env(CachingHttp(FetchHttp()))
     return Setup(files=PackFiles(pack_dir), pack_url=f"{public}/pack/pack.toml", bootstrap_jar=Path(jar),
-                 min_mb=int(env("PRISM_MIN_MB", "2048")), max_mb=int(env("PRISM_MAX_MB", "6144")))
+                 min_mb=int(env("PRISM_MIN_MB", "2048")), max_mb=int(env("PRISM_MAX_MB", "6144")),
+                 blocked_files=curseforge.blocked_files if curseforge else None)
 
 
 def applier_from_env(requests: Requests | None) -> ApplyDesk | None:

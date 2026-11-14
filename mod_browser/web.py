@@ -180,6 +180,8 @@ class Setup:
     bootstrap_jar: Path | None = None
     min_mb: int = 2048
     max_mb: int = 6144
+    #: CurseForge file ids -> the ones it hands out no URL for (CurseForgeCatalog.blocked_files).
+    blocked_files: Callable[[list[str]], set[str]] | None = None
 
 
 @dataclass
@@ -253,6 +255,8 @@ class App:
             self._render(f, name, monitor.address, browse is not None, self.requests is not None, setup is not None)
             for f in pages)
         self._mods_json: tuple[str, bytes] | None = None
+        self._blocked: tuple[str, set[str]] | None = None
+        self._blocked_lock = threading.Lock()
 
     @staticmethod
     def _render(filename: str, name: str, address: str, browsing: bool, queueing: bool = False,
@@ -543,6 +547,7 @@ class App:
     def setup_info(self, req: Req) -> Response:
         data = self.catalog.catalog()
         pack = data["pack"]
+        blocked = self._blocked_files(pack["commit"], [m["curseforgeFile"] for m in data["mods"] if m.get("curseforgeFile")])
         have_jar = self.setup.bootstrap_jar is not None and self.setup.bootstrap_jar.is_file()
         return _json({
             "address": self.monitor.address,
@@ -550,9 +555,28 @@ class App:
             "minecraft": pack["minecraft"], "neoforge": pack["neoforge"],
             "instance": {"available": have_jar, "url": "/prism/instance.zip", "memoryMb": self.setup.max_mb},
             "manual": [{"name": m["name"], "filename": m["filename"], "url": m["source"]["url"]}
-                       for m in data["mods"] if m.get("manual")],
+                       for m in data["mods"] if m["side"] != "server"
+                       and (m.get("manual") or m.get("curseforgeFile") in blocked)],
             "pack": {"commit": pack["commit"], "version": pack["version"]},
         })
+
+    def _blocked_files(self, commit: str, file_ids: list[str]) -> set[str]:
+        """Asked of CurseForge once per pack commit. If it does not answer, the notes' list alone
+        stands for now and the next request asks again: a guess is never cached."""
+        check = self.setup.blocked_files if self.setup else None
+        if check is None or not file_ids:
+            return set()
+        with self._blocked_lock:
+            if self._blocked and self._blocked[0] == commit:
+                return self._blocked[1]
+        try:
+            found = check(file_ids)
+        except Exception:  # noqa: BLE001 - CurseForge down must not take /setup with it
+            sys.stderr.write("mod-browser: CurseForge blocked-file check failed\n" + traceback.format_exc())
+            return set()
+        with self._blocked_lock:
+            self._blocked = (commit, found)
+        return found
 
     def pack_changes(self, req: Req) -> Response:
         since = (req.query.get("since") or [""])[0]
