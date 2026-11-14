@@ -19,7 +19,7 @@ from .prism import PackFiles
 from .queue import Queue
 from .whitelist import FileWhitelist
 from .rcon import RconServer
-from .status import StatusMonitor
+from .status import BootTimes, StatusMonitor
 from .sources import CompositeCatalog, DirInstalled, HttpJars
 from .web import App, Browse, Requests, Servers, Setup, set_trusted_proxies
 
@@ -98,8 +98,11 @@ def main() -> None:
         container_net=env("CONTAINER_NET", "172.16.0.0/12"),
         log_tz=env("LOG_TZ", "America/New_York"),
     )
+    # How long a boot usually takes is kept beside the request queue, so it survives a restart.
+    data_dir = Path(env("DATA_DIR", "/srv/data"))
+    boots = BootTimes(data_dir / "boot-times.json" if data_dir.is_dir() else None)
     monitor = StatusMonitor(server, address=env("SERVER_ADDRESS", "play.example.com"),
-                            max_age=float(env("STATUS_MAX_AGE", "10")))
+                            max_age=float(env("STATUS_MAX_AGE", "10")), boots=boots)
     pack_dir = Path(env("PACK_DIR", "/srv/pack"))
     catalog = PackCatalog(pack_dir)
     browse = browse_from_env()

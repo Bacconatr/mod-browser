@@ -82,7 +82,7 @@ class FetchHttp:
             conn.close()
 
     def fetch_jar(self, url: str) -> IO[bytes]:
-        """The body as a seekable file (in memory up to 8 MiB, on disk past that). Caller closes it."""
+        """The body as a seekable file (in memory up to 1 MiB, on disk past that). Caller closes it."""
         return self._get(url, {}, self.max_jar, self.jar_timeout)
 
     # ---- internals ----
@@ -127,7 +127,9 @@ class FetchHttp:
         declared = response.getheader("Content-Length")
         if declared and declared.isdigit() and int(declared) > cap:
             raise FetchError("body is too large")
-        out = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024)
+        # 1 MiB in memory, then the file is on disk (/tmp, which Homelab mounts
+        # from the guest disk): a jar is read from it once, so RAM buys nothing.
+        out = tempfile.SpooledTemporaryFile(max_size=1024 * 1024)
         total = 0
         try:
             while True:

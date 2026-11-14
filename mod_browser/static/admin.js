@@ -22,7 +22,8 @@ async function call(method, path, body) {
   });
   let data = {};
   try { data = await response.json(); } catch { /* not JSON */ }
-  if (!response.ok) throw new Error(data.error || `The server answered ${response.status}.`);
+  if (!response.ok) throw new Error(data.error || ([502, 503, 504].includes(response.status)
+    ? "The site is restarting. Try again in a few seconds." : `The server answered ${response.status}.`));
   return data;
 }
 

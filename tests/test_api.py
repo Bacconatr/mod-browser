@@ -8,12 +8,12 @@ import tempfile
 import unittest
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from mod_browser.pack import PackCatalog, PackUnreadable
-from mod_browser.status import StatusMonitor, parse_tps
+from mod_browser.status import DEFAULT_BOOT_SECONDS, BootTimes, StatusMonitor, parse_tps
 from mod_browser.web import App, Servers
 from tests.fakes import LATER_MOD, FakeServer, add_mod, make_pack
 
@@ -95,6 +95,59 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(monitor.snapshot()["state"], "online")
         now[0] = 110.0
         self.assertEqual(monitor.snapshot()["state"], "down")
+
+    # ---- any boot, not only a batch: when it began and when it is usually ready ----
+    def boot_monitor(self, now, boots=None):
+        return StatusMonitor(self.server, address="x", max_age=0, now=lambda: now[0], boots=boots)
+
+    def test_a_boot_outside_a_batch_says_when_it_began_and_when_it_is_usually_ready(self):
+        start = datetime(2026, 11, 14, 7, 16, 57, tzinfo=timezone.utc)
+        now = [start + timedelta(seconds=60)]
+        self.server.rcon_up, self.server.started = False, start
+        boot = self.boot_monitor(now).snapshot()["boot"]
+        self.assertEqual(boot["since"], start.isoformat(timespec="seconds"))
+        self.assertEqual(boot["typicalSeconds"], round(DEFAULT_BOOT_SECONDS))
+        self.assertEqual(boot["readyBy"], (start + timedelta(seconds=DEFAULT_BOOT_SECONDS)).isoformat(timespec="seconds"))
+
+    def test_an_overrunning_boot_never_shows_a_ready_time_in_the_past(self):
+        start = datetime(2026, 11, 14, 7, 0, tzinfo=timezone.utc)
+        now = [start + timedelta(hours=1)]
+        self.server.rcon_up, self.server.started = False, start
+        ready = datetime.fromisoformat(self.boot_monitor(now).snapshot()["boot"]["readyBy"])
+        self.assertGreater(ready, now[0])
+
+    def test_a_watched_boot_teaches_the_estimate_and_it_survives_a_restart_of_the_app(self):
+        path = Path(tempfile.mkdtemp()) / "boot-times.json"
+        start = datetime(2026, 11, 14, 7, 0, tzinfo=timezone.utc)
+        now = [start + timedelta(seconds=30)]
+        self.server.rcon_up, self.server.started = False, start
+        monitor = self.boot_monitor(now, BootTimes(path))
+        self.assertEqual(monitor.snapshot()["state"], "starting")
+        self.server.rcon_up, now[0] = True, start + timedelta(seconds=120)  # ready after 120 s
+        self.assertEqual(monitor.snapshot()["state"], "online")
+        learned = BootTimes(path).typical  # a new process reads it back
+        self.assertEqual(learned, (DEFAULT_BOOT_SECONDS + 120) / 2)
+        self.server.rcon_up, self.server.started = False, start + timedelta(hours=1)
+        now[0] = start + timedelta(hours=1, seconds=10)
+        self.assertEqual(self.boot_monitor(now, BootTimes(path)).snapshot()["boot"]["typicalSeconds"], round(learned))
+
+    def test_a_boot_first_seen_already_online_teaches_nothing(self):
+        path = Path(tempfile.mkdtemp()) / "boot-times.json"
+        self.server.started = datetime(2026, 11, 14, 7, 0, tzinfo=timezone.utc)
+        now = [self.server.started + timedelta(seconds=5)]
+        self.boot_monitor(now, BootTimes(path)).snapshot()
+        self.assertFalse(path.exists())
+
+    def test_a_stopped_server_says_since_when_and_drops_it_once_it_runs(self):
+        t0 = datetime(2026, 11, 14, 7, 0, tzinfo=timezone.utc)
+        now = [t0]
+        monitor = self.boot_monitor(now)
+        self.server.running = False
+        self.assertEqual(monitor.snapshot()["downSince"], t0.isoformat(timespec="seconds"))
+        now[0] = t0 + timedelta(minutes=3)
+        self.assertEqual(monitor.snapshot()["downSince"], t0.isoformat(timespec="seconds"))  # not reset
+        self.server.running = True
+        self.assertNotIn("downSince", monitor.snapshot())
 
     def test_only_read_only_commands_reach_rcon(self):
         self.json("/api/status")

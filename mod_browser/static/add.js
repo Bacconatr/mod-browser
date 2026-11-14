@@ -22,11 +22,21 @@ const compact = new Intl.NumberFormat(undefined, { notation: "compact" });
 const dayFormat = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" });
 const day = (iso) => (iso && !Number.isNaN(Date.parse(iso)) ? dayFormat.format(new Date(iso)) : "unknown");
 
-async function api(path) {
+// 502/503/504 with no JSON is the proxy, not the app: the app is restarting.
+const PROXY_DOWN = new Set([502, 503, 504]);
+const failure = (status, body) => (body && body.error)
+  || (PROXY_DOWN.has(status) ? "The site is restarting. Try again in a few seconds." : `The server answered ${status}.`);
+
+// A read is retried once after a proxy answer, so a restart does not show as an error.
+async function api(path, retry = true) {
   const response = await fetch(path, { headers: { accept: "application/json" } });
   let body = null;
   try { body = await response.json(); } catch { /* not JSON */ }
-  if (!response.ok) throw new Error((body && body.error) || `The server answered ${response.status}.`);
+  if (!response.ok && retry && !body && PROXY_DOWN.has(response.status)) {
+    await new Promise((done) => setTimeout(done, 3000));
+    return api(path, false);
+  }
+  if (!response.ok) throw new Error(failure(response.status, body));
   return body;
 }
 
@@ -181,7 +191,7 @@ function requestForm(project, v) {
         body: JSON.stringify({ name: input.value.trim(), source: project.source, id: project.id, version: v.version.id }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || `The server answered ${response.status}.`);
+      if (!response.ok) throw new Error(failure(response.status, data));
       saveName(input.value.trim());
       status.textContent = `Asked. It is ${data.request.state} until the owner decides. See it in the queue.`;
       form.replaceChildren(status, el("a", { href: "/queue", text: "Open the queue" }));

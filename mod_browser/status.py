@@ -7,6 +7,12 @@ States, as the page names them:
   down      The container is not running: stopped, or between a crash and
             Docker restarting it.
 
+Any boot is tracked, not only one the applier drives (a crash, Docker's
+restart, a host reboot): while `starting`, the snapshot carries `boot` with
+when the server process started and when it is usually ready, learned from
+the boots this app has watched finish (BootTimes). While `down` it carries
+`downSince`, the first time this app saw it down.
+
 The snapshot is refreshed on demand when older than `max_age`, so a stopped
 container shows as down on the first request after `max_age` (10 s by
 default), well inside the one minute the page promises. There is no
@@ -15,10 +21,14 @@ background thread to die silently.
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import tempfile
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Callable
 
 from .ports import ServerPort, ServerUnavailable
@@ -51,12 +61,57 @@ def _iso(moment: datetime | None) -> str | None:
     return moment.isoformat(timespec="seconds") if moment else None
 
 
+#: Until a boot has been watched to the end: about what the pack took on guest 120.
+DEFAULT_BOOT_SECONDS = 240.0
+#: A watched boot shorter or longer than this is not a boot (or not one worth learning).
+_BOOT_BOUNDS = (20.0, 3600.0)
+#: An estimate never shows a time already past: an overrunning boot is "any moment now".
+_MIN_AHEAD = timedelta(seconds=30)
+
+
+class BootTimes:
+    """How long a boot usually takes, kept in a small JSON file so a restart of this app keeps it."""
+
+    def __init__(self, path: Path | None = None):
+        self.path = path
+        self._typical = DEFAULT_BOOT_SECONDS
+        if path is not None:
+            try:
+                value = json.loads(path.read_text()).get("typicalSeconds")
+                if isinstance(value, (int, float)) and _BOOT_BOUNDS[0] <= value <= _BOOT_BOUNDS[1]:
+                    self._typical = float(value)
+            except (OSError, ValueError, AttributeError):
+                pass
+
+    @property
+    def typical(self) -> float:
+        return self._typical
+
+    def learn(self, seconds: float) -> None:
+        if not _BOOT_BOUNDS[0] <= seconds <= _BOOT_BOUNDS[1]:
+            return
+        self._typical = round(0.5 * self._typical + 0.5 * seconds, 1)
+        if self.path is None:
+            return
+        try:
+            fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".boot-")
+            with os.fdopen(fd, "w") as f:
+                json.dump({"typicalSeconds": self._typical}, f)
+            os.replace(tmp, self.path)
+        except OSError:
+            pass  # an estimate that is not saved is relearned; never worth failing a page for
+
+
 class StatusMonitor:
     def __init__(self, server: ServerPort, address: str, max_age: float = 10.0,
                  clock: Callable[[], float] = time.monotonic,
-                 now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
+                 now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+                 boots: BootTimes | None = None):
         self.server, self.address, self.max_age = server, address, max_age
         self._clock, self._now = clock, now
+        self.boots = boots or BootTimes()
+        self._booting: datetime | None = None   # the start time of a boot seen in progress
+        self._down_since: datetime | None = None
         self._lock = threading.Lock()
         self._snapshot: dict[str, Any] | None = None
         self._taken = 0.0
@@ -77,20 +132,37 @@ class StatusMonitor:
             "address": self.address,
             "checkedAt": _iso(self._now()),
         }
+        now = self._now()
         if not self.server.container_running():
+            self._down_since = self._down_since or now
+            self._booting = None
+            result["downSince"] = _iso(self._down_since)
             return result
+        self._down_since = None
         result["state"] = "starting"
-        result["lastRestart"] = _iso(self.server.last_start())
+        started = self.server.last_start()
+        result["lastRestart"] = _iso(started)
         try:
             players = parse_list(self.server.rcon("list"))
         except ServerUnavailable:
-            return result
+            players = None
         if players is None:
-            return result
+            return self._starting(result, started, now)
+        if self._booting is not None and started == self._booting:
+            self.boots.learn((now - started).total_seconds())
+        self._booting = None
         result["state"] = "online"
         result["players"] = players
         try:
             result["tps"] = parse_tps(self.server.rcon("neoforge tps"))
         except ServerUnavailable:
             pass
+        return result
+
+    def _starting(self, result: dict[str, Any], started: datetime | None, now: datetime) -> dict[str, Any]:
+        """A boot in progress: when it began and when it is usually ready."""
+        self._booting = started
+        typical = self.boots.typical
+        ready = max(started + timedelta(seconds=typical), now + _MIN_AHEAD) if started else None
+        result["boot"] = {"since": _iso(started), "typicalSeconds": round(typical), "readyBy": _iso(ready)}
         return result
