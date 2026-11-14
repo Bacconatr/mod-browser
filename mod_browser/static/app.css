@@ -1,42 +1,26 @@
-/* Andesite casing, brass, copper. Dark first: friends check this in the
-   evening, right before launching the game. Light for daytime phones. */
+/* Catppuccin Mocha (catppuccin.com/palette). Dark only: friends check this
+   in the evening, right before launching the game. Mauve is the accent,
+   peach marks trouble, green means up. */
 :root {
   color-scheme: dark;
-  --ground: #1b1e1c;
-  --ground-2: #232724;
-  --line: #343a36;
-  --ink: #e9e6dc;
-  --ink-2: #b3b0a5;
-  --brass: #d6a93f;
-  --brass-ink: #1d1708;
-  --copper: #d07a45;
-  --down: #8f9690;
-  --ok: #8fc27a;
-  --focus: #f0c75e;
-  --band-ground: #2a2e2b;
+  --ground: #1e1e2e;     /* base */
+  --ground-2: #313244;   /* surface0 */
+  --line: #45475a;       /* surface1 */
+  --ink: #cdd6f4;        /* text */
+  --ink-2: #a6adc8;      /* subtext0 */
+  --brass: #cba6f7;      /* mauve */
+  --brass-ink: #11111b;  /* crust */
+  --copper: #fab387;     /* peach */
+  --down: #6c7086;       /* overlay0 */
+  --ok: #a6e3a1;         /* green */
+  --focus: #b4befe;      /* lavender */
+  --band-ground: #181825; /* mantle */
   --band-ink: var(--ink);
   --band-sub: var(--ink-2);
   --radius: 6px;
   --gap: 1rem;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
-}
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --ground: #f1efe8;
-    --ground-2: #e6e3da;
-    --line: #cfcbbf;
-    --ink: #1f2220;
-    --ink-2: #555850;
-    --brass: #9a7419;
-    --brass-ink: #fff8e6;
-    --copper: #a4511f;
-    --down: #5e645f;
-    --ok: #3f7a2c;
-    --focus: #8a6510;
-    --band-ground: #dcd8cc;
-  }
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -73,11 +57,8 @@ p { margin: 0; }
 }
 .band[data-state="starting"] {
   --band-ground: var(--copper);
-  --band-ink: #1e0e04;
-  --band-sub: #3d1f0c;
-}
-@media (prefers-color-scheme: light) {
-  .band[data-state="starting"] { --band-ink: #fff3ea; --band-sub: #f6d9c6; }
+  --band-ink: #11111b;
+  --band-sub: #313244;
 }
 .band-grid { display: grid; gap: 1.25rem; grid-template-columns: 1fr; align-items: end; }
 @media (min-width: 48rem) { .band-grid { grid-template-columns: 1fr auto; } }
@@ -92,7 +73,7 @@ p { margin: 0; }
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--band-ink) 25%, transparent);
 }
 .band[data-state="online"] .lamp { background: var(--ok); }
-.band[data-state="starting"] .lamp { background: #ffd27a; animation: blink 1.2s ease-in-out infinite; }
+.band[data-state="starting"] .lamp { background: #f9e2af; animation: blink 1.2s ease-in-out infinite; }
 @keyframes blink { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .band[data-state="starting"] .lamp { animation: none; } }
 
@@ -107,9 +88,6 @@ p { margin: 0; }
   background: color-mix(in srgb, var(--band-ground) 70%, #000 30%);
   color: var(--band-ink);
   width: 100%;
-}
-@media (prefers-color-scheme: light) {
-  .address { background: color-mix(in srgb, var(--band-ground) 75%, #fff 25%); }
 }
 @media (min-width: 48rem) { .address { width: 19rem; } }
 .button {
