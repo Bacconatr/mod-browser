@@ -11,8 +11,12 @@
 <script src="/static/app.js" defer></script>
 </head>
 <body>
-<header class="band" data-state="unknown" aria-live="polite">
-  <div class="wrap band-grid">
+<header class="band wrap" data-state="unknown" aria-live="polite">
+  <nav class="nav glass" aria-label="Site">
+    <a class="wordmark" href="/">{{name}}</a>
+    <ul class="nav-links">{{navlinks}}</ul>
+  </nav>
+  <div class="hero glass">
     <div class="ident">
       <h1>{{name}}</h1>
       <p class="state"><span class="lamp" aria-hidden="true"></span><strong id="state-label">Checking the server…</strong> <span id="checked" class="muted"></span></p>
@@ -32,7 +36,7 @@
 </header>
 
 <main>
-  <section class="wrap vitals" aria-label="Server vitals">
+  <section class="wrap vitals glass" aria-label="Server vitals">
     <div class="vital">
       <h2>Online</h2>
       <p class="figure"><span id="players-count">–</span><span class="unit" id="players-max"></span></p>
@@ -51,7 +55,7 @@
     </div>
   </section>
 
-  <section class="wrap mods" aria-labelledby="mods-heading">
+  <section class="wrap mods glass" aria-labelledby="mods-heading">
     <div class="mods-head">
       <h2 id="mods-heading">Mods <span class="count" id="mod-count"></span></h2>
       <p class="muted small" id="pack-line"></p>
@@ -100,6 +104,6 @@
   {{addlink}}
   <p>Side says where a mod runs: <em>both</em> means every player needs it, <em>client</em> only your game, <em>server</em> only ours.</p>
 </footer>
-<noscript><p class="wrap">This page needs JavaScript to read the server's state. The address is {{address}}.</p></noscript>
+<noscript><p class="wrap">This page needs JavaScript to read the server’s state. The address is {{address}}.</p></noscript>
 </body>
 </html>

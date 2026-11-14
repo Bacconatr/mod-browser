@@ -5,34 +5,41 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
 <meta name="robots" content="noindex">
+<meta name="description" content="The owner's desk for {{name}}: approve requests and apply them.">
 <title>Admin · {{name}}</title>
 <link rel="stylesheet" href="/static/app.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23cba6f7'/%3E%3C/svg%3E">
 <script src="/static/admin.js" defer></script>
 </head>
 <body>
-<header class="band" data-state="unknown">
-  <div class="wrap">
-    <h1><a href="/">{{name}}</a> · admin</h1>
+<header class="band wrap" data-state="unknown">
+  <nav class="nav glass" aria-label="Site">
+    <a class="wordmark" href="/">{{name}}</a>
+    <ul class="nav-links">{{navlinks}}</ul>
+  </nav>
+  <div class="page-head">
+    <h1>Admin</h1>
     <p class="detail">Approve, deny or change what friends asked for.</p>
   </div>
 </header>
 <main class="wrap find">
-  <form id="add" class="filters">
+  <form id="add" class="filters glass panel">
     <div class="field grow"><label for="add-id">Add a mod as the owner: Modrinth project id, or CurseForge project id</label>
       <input id="add-id" type="search" autocomplete="off" spellcheck="false" placeholder="e.g. Vg5TIO6d or 1793084"></div>
     <div class="field"><label for="add-source">Source</label>
       <select id="add-source"><option value="modrinth">Modrinth</option><option value="curseforge">CurseForge</option></select></div>
     <div class="field"><label for="add-go" class="sr">Add</label><button id="add-go" class="button solid" type="submit">Add</button></div>
   </form>
-  <p class="actions"><button id="apply-empty" type="button" class="button solid">Apply what is queued when the server is empty</button>
-    <button id="restart-now" type="button" class="button">Restart now with what is queued</button>
+  <div class="glass panel">
+  <p class="actions"><button id="apply-empty" type="button" class="button solid">Apply when empty</button>
+    <button id="restart-now" type="button" class="button">Restart now</button>
     <button id="apply-cancel" type="button" class="button">Cancel</button>
-    <span class="muted small">Stops the server, backs up the world and test-boots a copy first; "now" warns players for a minute.</span></p>
-  <p class="actions"><button id="upstream-check" type="button" class="button">Check for a new All of Create: Aeronautics release</button>
+    <span class="muted small">Stops the server, backs up the world and test-boots a copy first; “now” warns players for a minute.</span></p>
+  <p class="actions"><button id="upstream-check" type="button" class="button">Check for a pack update</button>
     <span class="muted small">Runs by itself every morning; a new release arrives below as a request you approve.</span></p>
+  </div>
   <p id="message" class="muted small" role="status" aria-live="polite"></p>
-  <ul id="list" class="found-list"></ul>
+  <ul id="list" class="found-list glass panel"></ul>
 </main>
 <noscript><p class="wrap">This page needs JavaScript.</p></noscript>
 </body>
