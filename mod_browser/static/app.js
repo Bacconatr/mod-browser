@@ -72,8 +72,13 @@ function renderStatus(status, unreachable = "unknown") {
   const band = document.querySelector(".band");
   band.dataset.state = state;
   $("state-label").textContent = STATES[state].label;
-  const apply = status && status.apply && status.apply.phase !== "idle" ? status.apply.detail : "";
-  $("state-detail").textContent = [STATES[state].detail, apply, backOnline(status), downSince(status)].filter(Boolean).join(" ");
+  // A finished update ("online") is old news once the label says Online or Starting up: say nothing.
+  const phase = status && status.apply ? status.apply.phase : "idle";
+  const apply = phase !== "idle" && phase !== "online" ? status.apply.detail : "";
+  // A real estimate ("Booting since 3:58 AM… usually ready around 4:02 AM") replaces the generic sentence.
+  const eta = backOnline(status);
+  const generic = eta && state === "starting" ? "" : STATES[state].detail;
+  $("state-detail").textContent = [generic, apply, eta, downSince(status)].filter(Boolean).join(" ");
   $("checked").textContent = status && status.checkedAt ? `checked ${ago(status.checkedAt)}` : "";
   if (status && status.address) $("address").value = status.address;
 

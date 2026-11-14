@@ -235,6 +235,7 @@ class ApplyTest(MaintenanceCase):
         self.host.player_counts = [0]
         self.runner.tick()
         self.assertIn("applied", self.apply_status()["detail"])
+        self.assertNotIn("Batch", self.apply_status()["detail"])  # friends read it; batch numbers are admin-only
 
     def test_the_app_never_runs_anything_itself_and_the_off_switch_answers_409(self):
         self.queued(CONNECTED)
