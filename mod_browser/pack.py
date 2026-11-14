@@ -188,6 +188,8 @@ class PackCatalog:
             filename = meta.get("filename", "")
             entries.append({
                 "id": path.rsplit("/", 1)[-1].removesuffix(".pw.toml"),
+                # The id is only the file name, and two folders can share one (#1789): the path is unique.
+                "path": path,
                 "name": meta.get("name", filename),
                 "filename": filename,
                 "version": version_from_filename(filename, minecraft),

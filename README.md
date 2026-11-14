@@ -192,7 +192,7 @@ and the start, `/pack/` already serves the new pack (the server is down then,
 and a rollback is picked up by the next launch); the restored world has no
 Distant Horizons LODs (they regenerate).
 
-**Upstream updates** (`kind = "upstream"`, see "Upstream releases") carry `add`, `change` and `remove` entries; `change` and `remove` act on the metafile they name (and nothing outside `mods/`), a removed metafile leaves `index.toml`, and an upstream update is applied **on its own**: a friend's request computed against the old pack waits for the next batch.
+**Upstream updates** (`kind = "upstream"`, see "Upstream releases") carry `add`, `change` and `remove` entries; `change` and `remove` act on the metafile they name (a `.pw.toml` inside the pack, in any folder, and only when it names the same project), a removed metafile leaves `index.toml`, and an upstream update is applied **on its own**: a friend's request computed against the old pack waits for the next batch.
 
 Known limits: a failed batch fails every request in it (no bisecting for the
 culprit; the owner re-adds them one at a time with `add directly`); requests in
@@ -238,9 +238,30 @@ that changes nothing files nothing; one nobody decided on is denied as
 **What is kept.** A mod the pack holds as an extra, or that was added later, is
 never changed or removed: Deep Seas 3.4.5 stays against a bundled 3.3.0
 (`kept`, with `upstreamNewer` set when upstream is the newer one). Only base-pack
-CurseForge mods are changed or removed. A pack mod is matched to an upstream mod
-by CurseForge project id, then by its jar's name without the version, because
-the owner's pins are often Modrinth files known upstream under another id.
+CurseForge projects are changed, and only base-pack mods (in `mods/`) are
+removed: a resource or data pack upstream stops listing stays for the owner.
+
+**Matching is by project, never by file name** (Homelab #1789). Every metafile
+in the pack is compared, in whatever folder (`mods/`, `resourcepacks/`, the
+pack root), by CurseForge project id. Only a metafile that names no CurseForge
+project falls back to its jar's name without the version (the owner's pins are
+often Modrinth files known upstream under another id), and only against a file
+of the same kind (jar or not). v3.0HF was applied before this: it saw only
+`mods/`, so 37 resource and data packs came in a second time as `mods/`
+entries, and "Boatload ZH_HK Translation" matched the Boatload mod by name and
+replaced it.
+
+**Where an added project goes.** By its CurseForge class (`/v1/mods` gives
+`classId`): mods in `mods/`; another type where the pack already keeps most of
+that type (this pack keeps shaders and data packs at its root), else
+`resourcepacks/` or `shaderpacks/`. A type the pack keeps nowhere, or a non-jar
+headed for `mods/`, is refused by the applier rather than guessed.
+
+**The applier checks identity too.** An `add` of a project the pack already
+tracks in any folder is refused; a `change` or `remove` aimed at a metafile
+that names a different project is refused (the batch fails before the server is
+touched); a new metafile whose name another project's file has takes a numbered
+name (`boatload-2.pw.toml`), never that file.
 
 **Stale differences.** The request records the pack commit it was computed
 against; if the pack has moved when the owner approves, it is held `approved`

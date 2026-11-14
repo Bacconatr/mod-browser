@@ -93,7 +93,7 @@ class DifferenceTest(UpstreamCase):
         # Deep Seas: the owner pins 3.4.5 (a Modrinth file); upstream bundles 3.3.0 under a different id. The pin stays.
         self.assertEqual(diff["kept"], [{"name": "Create Deep Seas [BETA]", "pack": "3.4.5", "upstream": "3.3.0", "upstreamNewer": False}])
         self.assertNotIn("Create Collision Crashfix", json.dumps(diff))   # an extra upstream has never heard of is left alone
-        self.assertNotIn("Complementary", json.dumps(diff))               # a resource pack is not part of the comparison
+        self.assertNotIn("Complementary", json.dumps(diff))               # a resource pack upstream does not list is not removed
 
     def test_the_pack_operations_carry_what_the_applier_needs(self):
         self.checker.check()
@@ -273,8 +273,9 @@ class CurseForgeAdapterTest(UpstreamCase):
                                  # Blocked, and not on Modrinth.
                                  {"id": 13, "modId": 1793084, "fileName": "loconautics-0.1.1BETA.jar",
                                   "hashes": [{"value": "ff", "algo": 1}]}]}
-            return {"data": [{"id": 947914, "name": "Create: Connected"}, {"id": 4242, "name": "Straw Statues"},
-                             {"id": 676721, "name": "Create Aeronautics"}, {"id": 1793084, "name": "Create: Loconautics"}]}
+            # classId: 6 is a mod, 12 a resource pack (the documented Minecraft classes).
+            return {"data": [{"id": 947914, "name": "Create: Connected", "classId": 6}, {"id": 4242, "name": "Straw Statues", "classId": 12},
+                             {"id": 676721, "name": "Create Aeronautics", "classId": 6}, {"id": 1793084, "name": "Create: Loconautics"}]}
 
     def test_reads_the_newest_release_its_manifest_and_names_every_mod(self):
         http = self.Http()
@@ -283,6 +284,8 @@ class CurseForgeAdapterTest(UpstreamCase):
         self.assertEqual([(m.project_id, m.name, m.version, m.file_hash) for m in release.mods], [
             ("947914", "Create: Connected", "1.3.4-mc1.21.1", "ab"), ("4242", "Straw Statues", "1.0", None),
             ("676721", "Create Aeronautics", "1.21.1-1.3.2", "ee"), ("1793084", "Create: Loconautics", "0.1.1BETA", "ff")])
+        # Each project's type, which decides its folder; a project CurseForge gives no class for has None.
+        self.assertEqual([m.class_id for m in release.mods], [6, 12, 6, None])
         self.assertEqual([u.rsplit("/", 1)[1] for u, _ in http.posts], ["files", "mods", "version_files"])
 
     def test_a_file_curseforge_blocks_is_found_on_modrinth_by_its_bytes(self):

@@ -30,6 +30,8 @@ from typing import Any
 _ENV = {"GIT_AUTHOR_NAME": "mod-browser", "GIT_AUTHOR_EMAIL": "mod-browser@aeronautics.invalid",
         "GIT_COMMITTER_NAME": "mod-browser", "GIT_COMMITTER_EMAIL": "mod-browser@aeronautics.invalid"}
 _FOLDER = "mods"
+#: A folder a new metafile may go in: "" (the pack root) or plain lower-case names, never `..` or a dot folder.
+_FOLDER_NAME = re.compile(r"^(?:[a-z0-9][a-z0-9_-]*(?:/[a-z0-9][a-z0-9_-]*)*)?$")
 
 
 class StageError(Exception):
@@ -45,6 +47,39 @@ class Staged:
 
 def slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:60] or "mod"
+
+
+def metafiles(tree: Path) -> list[Path]:
+    """Every packwiz metafile in the pack, in any folder (mods/, resourcepacks/, the root...), never under .git."""
+    return sorted(p for p in tree.rglob("*.pw.toml")
+                  if p.is_file() and not any(part.startswith(".") for part in p.relative_to(tree).parts[:-1]))
+
+
+def identity(path: Path) -> set[tuple[str, str]]:
+    """The projects a metafile names: ("modrinth", mod-id) and/or ("curseforge", project-id)."""
+    try:
+        update = tomllib.loads(path.read_text()).get("update", {})
+    except (OSError, tomllib.TOMLDecodeError):
+        return set()
+    out = set()
+    for source, key in (("modrinth", "mod-id"), ("curseforge", "project-id")):
+        table = update.get(source)
+        if isinstance(table, dict) and table.get(key) is not None:
+            out.add((source, str(table[key])))
+    return out
+
+
+def op_identity(mod: dict[str, Any]) -> set[tuple[str, str]]:
+    """The projects a request entry names: its own source and id, plus the CurseForge ids a Modrinth twin keeps."""
+    out = {(str(mod["source"]), str(mod["projectId"]))} if mod.get("projectId") is not None else set()
+    cf = mod.get("curseforge")
+    if isinstance(cf, dict) and cf.get("projectId") is not None:
+        out.add(("curseforge", str(cf["projectId"])))
+    return out
+
+
+def _ids(ids: set[tuple[str, str]]) -> str:
+    return ", ".join(f"{source} {pid}" for source, pid in sorted(ids)) or "no project id"
 
 
 def _q(value: str) -> str:
@@ -86,17 +121,11 @@ class GitPackRepo:
 
     # ---- staging ----
     def _existing(self, tree: Path) -> dict[tuple[str, str], Path]:
-        """(source, project id) -> metafile, for every mod the pack already tracks."""
+        """(source, project id) -> metafile, for every project the pack already tracks, in whatever folder."""
         found: dict[tuple[str, str], Path] = {}
-        for path in (tree / _FOLDER).glob("*.pw.toml"):
-            try:
-                update = tomllib.loads(path.read_text()).get("update", {})
-            except (OSError, tomllib.TOMLDecodeError):
-                continue
-            if "modrinth" in update:
-                found[("modrinth", str(update["modrinth"].get("mod-id")))] = path
-            if "curseforge" in update:
-                found[("curseforge", str(update["curseforge"].get("project-id")))] = path
+        for path in metafiles(tree):
+            for key in identity(path):
+                found.setdefault(key, path)
         return found
 
     def stage(self, batch: int, requests: list[Any]) -> Staged:
@@ -124,16 +153,31 @@ class GitPackRepo:
 
     def _write(self, tree: Path, added: list[dict[str, Any]]) -> bool:
         """Apply a request's entries to the tree. An entry is `add` (the default), or, for an upstream
-        update, `change` or `remove` of the metafile it names."""
-        existing = self._existing(tree)
-        taken = {p.name for p in (tree / _FOLDER).glob("*.pw.toml")}
+        update, `change` or `remove` of the metafile it names.
+
+        A project is known by its ids, never by its file name (#1789): an `add` of a project the pack
+        already tracks, in any folder, is refused; a `change` or `remove` aimed at a metafile of a
+        different project (a translation pack named like the mod it translates) is refused; and a new
+        metafile never takes a name another project's metafile has.
+
+        Removals go first, so a project coming back takes the name its metafile had (Boatload's
+        mods/boatload.pw.toml, once the translation written over it is removed)."""
         wrote = False
-        for mod in added:
+        removals = [m for m in added if m.get("op", "add") == "remove"]
+        existing: dict[tuple[str, str], Path] = {}
+        taken: set[str] = set()
+        for i, mod in enumerate(removals + [m for m in added if m.get("op", "add") != "remove"]):
+            if i == len(removals):  # what the pack holds once the removals are done
+                existing = self._existing(tree)
+                taken = {p.relative_to(tree).as_posix() for p in metafiles(tree)}
             op = mod.get("op", "add")
             if op in ("change", "remove"):
-                target = (tree / str(mod.get("metafile") or "")).resolve()
-                if tree.resolve() not in target.parents or target.parent != (tree / _FOLDER).resolve() or not target.is_file():
-                    raise StageError(f"{mod['name']}: the pack has no metafile {mod.get('metafile')!r} to {op}.")
+                target = self._metafile(tree, mod, op)
+                theirs, ours = identity(target), op_identity(mod)
+                shared = {s for s, _ in theirs} & {s for s, _ in ours}
+                if shared and not theirs & ours:
+                    raise StageError(f"{mod['name']}: {mod['metafile']} is a different project ({_ids(theirs)}, "
+                                     f"not {_ids(ours)}); refusing to {op} it.")
                 if op == "remove":
                     target.unlink()
                 else:
@@ -142,25 +186,53 @@ class GitPackRepo:
                 continue
             if op != "add":
                 raise StageError(f"unknown operation {op!r} for {mod['name']}")
-            known = existing.get((mod["source"], str(mod["projectId"])))
+            known = next((existing[k] for k in sorted(op_identity(mod)) if k in existing), None)
             if known is not None and not mod.get("replaces"):
-                raise StageError(f"{mod['name']} is already tracked by the pack as {known.name}.")
+                raise StageError(f"{mod['name']} is already tracked by the pack as {known.relative_to(tree).as_posix()}.")
             if known is None and mod.get("replaces"):
                 raise StageError(f"{mod['name']} would replace version {mod['replaces']} in the pack, but that mod was "
                                  "not added through Modrinth or CurseForge, so the owner has to swap it by hand.")
             target = known
             if target is None:
-                name = f"{slug(mod['name'])}.pw.toml"
+                folder = self._folder(mod)
+                prefix = f"{folder}/" if folder else ""
+                name = f"{prefix}{slug(mod['name'])}.pw.toml"
                 n = 2
                 while name in taken:
-                    name = f"{slug(mod['name'])}-{n}.pw.toml"
+                    name = f"{prefix}{slug(mod['name'])}-{n}.pw.toml"
                     n += 1
                 taken.add(name)
-                target = tree / _FOLDER / name
+                target = tree / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(metafile_text(mod))
+            for key in op_identity(mod):
+                existing.setdefault(key, target)
             wrote = True
         return wrote
+
+    @staticmethod
+    def _metafile(tree: Path, mod: dict[str, Any], op: str) -> Path:
+        """The pack metafile a change or remove names: a `.pw.toml` inside the pack, never under a dot folder."""
+        rel = str(mod.get("metafile") or "")
+        root = tree.resolve()
+        target = (tree / rel).resolve()
+        if (root not in target.parents or not rel.endswith(".pw.toml") or not target.is_file()
+                or any(part.startswith(".") for part in target.relative_to(root).parts)):
+            raise StageError(f"{mod['name']}: the pack has no metafile {mod.get('metafile')!r} to {op}.")
+        return target
+
+    @staticmethod
+    def _folder(mod: dict[str, Any]) -> str:
+        """Where a new metafile goes: the `folder` an upstream update names for its type, else mods/."""
+        folder = mod.get("folder", _FOLDER)
+        if folder is None:
+            raise StageError(f"{mod['name']} ({mod.get('fileName')}) is a {mod.get('type') or 'type of project'} the "
+                             "pack keeps nowhere yet, so the owner has to add it by hand.")
+        if not isinstance(folder, str) or not _FOLDER_NAME.match(folder):
+            raise StageError(f"{mod['name']}: {folder!r} is not a pack folder.")
+        if folder == _FOLDER and not str(mod.get("fileName", "")).lower().endswith(".jar"):
+            raise StageError(f"{mod['name']} ({mod.get('fileName')}) is not a mod jar; refusing to put it in mods/.")
+        return folder
 
     def _refresh(self, tree: Path) -> None:
         """Regenerate index.toml from the metafiles on disk, then pack.toml's hash of it (packwiz refresh)."""
@@ -173,7 +245,7 @@ class GitPackRepo:
             raise StageError("the pack's index does not use sha256; refusing to rewrite it")
         # A file the batch deleted leaves the index; one still on disk keeps its entry.
         entries = {f["file"]: f for f in old.get("files", []) if (tree / f["file"]).exists()}
-        for meta in (tree / _FOLDER).glob("*.pw.toml"):
+        for meta in metafiles(tree):
             rel = meta.relative_to(tree).as_posix()
             entries.setdefault(rel, {"file": rel, "metafile": True})
             entries[rel]["hash"] = hashlib.sha256(meta.read_bytes()).hexdigest()
