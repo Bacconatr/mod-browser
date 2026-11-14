@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from .queue import InvalidTransition, Queue, Request
@@ -34,6 +34,59 @@ OUTCOMES = ("applied", "test-failed", "rolled-back")
 #: What the status page may say. The runner's detail is shown as text, never as HTML.
 PHASES = ("idle", "requested", "waiting", "staging", "warning", "stopping", "backing-up", "test-booting",
           "promoting", "starting", "online", "failed", "rolling-back", "needs-recovery", "halted")
+
+
+#: The phases a restart walks through, in order, and how long each is assumed to take until a finished
+#: batch has been measured (then `learn` moves them toward what really happened). The warning is the
+#: runner's in-game countdown (60 s); the rest are first guesses for guest 120, deliberately on the slow side.
+RESTART_PHASES = ("warning", "stopping", "backing-up", "test-booting", "promoting", "starting")
+DEFAULT_SECONDS = {"warning": 60, "stopping": 60, "backing-up": 120, "test-booting": 300, "promoting": 30,
+                   "starting": 300}
+#: Before a "restart now" is picked up: the runner's 2-minute timer plus staging the downloads.
+PICKUP_SECONDS = 180
+DURATIONS_KEY = "apply.durations"
+TIMINGS_KEY = "apply.timings"
+
+
+def _parse(stamp: Any) -> datetime | None:
+    if not isinstance(stamp, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(stamp)
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def back_online_by(phase: str, since: Any, now: Any, durations: dict[str, float]) -> str | None:
+    """When the server should be up again, if `phase` is part of a restart; else None.
+
+    The current phase counts down from when it began, and a phase that overruns its estimate still
+    leaves at least a minute, so the page never shows a time already gone."""
+    if phase not in RESTART_PHASES:
+        return None
+    start, at = _parse(since), _parse(now)
+    if start is None or at is None:
+        return None
+    current = max(durations.get(phase, DEFAULT_SECONDS[phase]) - (at - start).total_seconds(), 60.0)
+    later = sum(durations.get(p, DEFAULT_SECONDS[p]) for p in RESTART_PHASES[RESTART_PHASES.index(phase) + 1:])
+    return (at + timedelta(seconds=current + later)).isoformat(timespec="seconds")
+
+
+def learn(durations: dict[str, float], starts: dict[str, Any], finished_at: Any) -> dict[str, float]:
+    """Move each measured phase's estimate halfway toward what it took this time."""
+    stamps = sorted(((p, _parse(t)) for p, t in starts.items() if p in RESTART_PHASES and _parse(t)),
+                    key=lambda pt: pt[1])
+    end = _parse(finished_at)
+    out = {p: float(durations.get(p, DEFAULT_SECONDS[p])) for p in RESTART_PHASES}
+    if end is None:
+        return out
+    for i, (phase, began) in enumerate(stamps):
+        until = stamps[i + 1][1] if i + 1 < len(stamps) else end
+        took = (until - began).total_seconds()
+        if 0 <= took <= 6 * 3600:
+            out[phase] = round((out[phase] + took) / 2, 1)
+    return out
 
 
 class DeskRefused(Exception):
@@ -75,10 +128,39 @@ class ApplyDesk:
                      "since": requested.get("at")}
         if halted:
             phase = {**phase, "phase": "halted", "detail": halted}
-        return {**phase, "requested": requested["mode"] if requested else None, "halted": halted, "enabled": self.enabled}
+        eta = None
+        if not halted:
+            durations = self._durations()
+            if phase.get("phase") == "requested" and requested and requested.get("mode") == "now":
+                start = _parse(requested.get("at"))
+                eta = back_online_by("warning", requested.get("at"), self._clock(), durations)
+                if eta and start is not None:
+                    eta = (_parse(eta) + timedelta(seconds=PICKUP_SECONDS)).isoformat(timespec="seconds")
+            else:
+                eta = back_online_by(str(phase.get("phase")), phase.get("since"), self._clock(), durations)
+        return {**phase, "requested": requested["mode"] if requested else None, "halted": halted,
+                "enabled": self.enabled, "backOnlineBy": eta}
+
+    def _durations(self) -> dict[str, float]:
+        saved = self._kv_json(DURATIONS_KEY) or {}
+        return {p: float(saved[p]) if isinstance(saved.get(p), (int, float)) else float(DEFAULT_SECONDS[p])
+                for p in RESTART_PHASES}
 
     def _set_phase(self, phase: str, detail: str, batch: int | None = None) -> None:
-        self.queue.kv_set(PHASE_KEY, json.dumps({"phase": phase, "detail": detail[:500], "since": self._clock(), "batch": batch}))
+        now = self._clock()
+        self.queue.kv_set(PHASE_KEY, json.dumps({"phase": phase, "detail": detail[:500], "since": now, "batch": batch}))
+        if batch is not None and phase in RESTART_PHASES:
+            timings = self._kv_json(TIMINGS_KEY) or {}
+            if timings.get("batch") != batch:
+                timings = {"batch": batch, "starts": {}}
+            timings["starts"].setdefault(phase, now)
+            self.queue.kv_set(TIMINGS_KEY, json.dumps(timings))
+
+    def _learn_from(self, batch: int) -> None:
+        """A batch that applied cleanly teaches the estimates; failures take odd paths and teach nothing."""
+        timings = self._kv_json(TIMINGS_KEY) or {}
+        if timings.get("batch") == batch and isinstance(timings.get("starts"), dict):
+            self.queue.kv_set(DURATIONS_KEY, json.dumps(learn(self._durations(), timings["starts"], self._clock())))
 
     def _on(self) -> None:
         if not self.enabled:
@@ -192,6 +274,8 @@ class ApplyDesk:
         # behind it still stand. A failure clears the ask, so a broken batch is never retried by itself.
         if outcome != "applied" or not self.queue.queued():
             self.queue.kv_set(REQUEST_KEY, "")
+        if outcome == "applied":
+            self._learn_from(batch)
         detail = {"applied": f"Batch {batch} applied. The server is online.",
                   "test-failed": f"Batch {batch} did not apply; the server is back on the old pack: {reason}",
                   "rolled-back": f"Batch {batch} was rolled back; the server is back on the old pack and world: {reason}"}[outcome]
