@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import tempfile
+import time
 import tomllib
 import unittest
 import urllib.error
@@ -15,6 +16,7 @@ from pathlib import Path
 from mod_browser.pack import PackCatalog
 from mod_browser.prism import PackFiles
 from mod_browser.status import StatusMonitor
+from mod_browser.curseforge import CurseForgeCatalog
 from mod_browser.web import App, Servers, Setup
 from tests.fakes import LATER_MOD, FakeServer, add_mod, make_pack
 
@@ -23,7 +25,7 @@ PACK_URL = "https://mods.example.com/pack/pack.toml"
 
 
 class SetupCase(unittest.TestCase):
-    def start(self, jar: bool = True, later_mod: bool = False) -> None:
+    def start(self, jar: bool = True, later_mod: bool = False, blocked_files=None) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.dir = Path(tmp.name)
@@ -41,7 +43,8 @@ class SetupCase(unittest.TestCase):
             jar_path.write_bytes(BOOTSTRAP)
         monitor = StatusMonitor(FakeServer(), address="play.example.com", max_age=0)
         self.app = App(monitor, PackCatalog(self.pack, max_age=0),
-                       setup=Setup(files=PackFiles(self.pack), pack_url=PACK_URL, bootstrap_jar=jar_path, min_mb=2048, max_mb=6144))
+                       setup=Setup(files=PackFiles(self.pack), pack_url=PACK_URL, bootstrap_jar=jar_path, min_mb=2048, max_mb=6144,
+                                   blocked_files=blocked_files))
         self.servers = Servers(self.app, public=("127.0.0.1", 0), admin=("127.0.0.1", 0)).start()
         self.addCleanup(self.servers.stop)
         self.base = f"http://127.0.0.1:{self.servers.public.server_address[1]}"
@@ -143,6 +146,47 @@ class ManualDownloadTest(SetupCase):
         self.assertEqual([m["name"] for m in manual], ["Create: Connected"])
         self.assertEqual(manual[0]["filename"], "create_connected-1.3.3-mc1.21.1.jar")
         self.assertTrue(manual[0]["url"].startswith("https://www.curseforge.com/"))
+
+    def manual_names(self, want: int | None = None) -> list[str]:
+        """The /setup list, waiting briefly for the background CurseForge check to land."""
+        deadline = time.monotonic() + 5
+        while True:
+            names = [m["name"] for m in self.json("/api/setup")["manual"]]
+            if want is None or len(names) >= want or time.monotonic() > deadline:
+                return names
+            time.sleep(0.05)
+
+    def test_curseforge_files_it_hands_out_no_url_for_are_listed_even_when_the_notes_do_not_name_them(self):
+        # The live pack's NOTES.md names its 13 blocked mods in prose, with no metafile paths,
+        # so the page listed none (2026-11-14); CurseForge itself says which ones are blocked.
+        # The real adapter runs, over a fake CurseForge that has no URL for the shader pack's file.
+        posts = []
+        class FakeCurseForge:
+            def post_json(self, url, body, headers=None):
+                posts.append((url, body["fileIds"]))
+                return {"data": [{"id": f, "downloadUrl": None if f == 1 else f"https://edge.forgecdn.net/{f}.jar"}
+                                 for f in body["fileIds"]]}
+        self.start(blocked_files=CurseForgeCatalog(FakeCurseForge(), "key").blocked_files)
+        self.assertEqual(self.manual_names(want=2), ["Complementary Shaders - Reimagined", "Create: Connected"])
+        self.json("/api/setup")
+        self.assertEqual(len(posts), 1, "asked once per pack commit, not per page view")
+        url, ids = posts[0]
+        self.assertEqual(url, "https://api.curseforge.com/v1/mods/files")
+        self.assertIn(1, ids)
+        self.assertTrue(all(isinstance(i, int) for i in ids))
+
+    def test_when_curseforge_does_not_answer_the_notes_list_stands_and_it_is_asked_again_later(self):
+        calls = []
+        def down(ids):
+            calls.append(1)
+            raise OSError("api.curseforge.com: timed out")
+        self.start(blocked_files=down)
+        self.assertEqual(self.manual_names(), ["Create: Connected"])
+        deadline = time.monotonic() + 5
+        while not calls and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertEqual(self.manual_names(), ["Create: Connected"])
+        self.assertEqual(len(calls), 1, "a failure waits BLOCKED_RETRY before the next try")
 
     def test_the_server_only_mods_are_marked_server_so_the_client_side_installer_skips_them(self):
         self.start()

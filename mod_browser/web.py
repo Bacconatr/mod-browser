@@ -58,6 +58,7 @@ import mimetypes
 import re
 import sys
 import threading
+import time
 import tomllib
 import traceback
 from dataclasses import dataclass, field
@@ -84,6 +85,10 @@ _MAX_QUERY = 200
 _ID = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 # Resolving can download jars from a CDN, so only a few may run at once.
 MAX_RESOLVES = 3
+#: /setup's "download these by hand" list: how long CurseForge's answer stands, and how long to
+#: wait after it did not answer.
+BLOCKED_TTL = 6 * 3600.0
+BLOCKED_RETRY = 300.0
 MIN_ADMIN_PASSWORD = 20
 # Connections served at once per listener. Caddy keeps a small pool of
 # upstream connections; anything past this is closed at once rather than
@@ -180,6 +185,8 @@ class Setup:
     bootstrap_jar: Path | None = None
     min_mb: int = 2048
     max_mb: int = 6144
+    #: CurseForge file ids -> the ones it hands out no URL for (CurseForgeCatalog.blocked_files).
+    blocked_files: Callable[[list[str]], set[str]] | None = None
 
 
 @dataclass
@@ -253,6 +260,11 @@ class App:
             self._render(f, name, monitor.address, browse is not None, self.requests is not None, setup is not None)
             for f in pages)
         self._mods_json: tuple[str, bytes] | None = None
+        self._blocked: tuple[str, set[str], float] | None = None
+        self._blocked_lock = threading.Lock()
+        self._blocked_running = False
+        self._blocked_retry_at = float("-inf")
+        self._clock = time.monotonic
 
     @staticmethod
     def _render(filename: str, name: str, address: str, browsing: bool, queueing: bool = False,
@@ -543,6 +555,9 @@ class App:
     def setup_info(self, req: Req) -> Response:
         data = self.catalog.catalog()
         pack = data["pack"]
+        # Only what a player installs: the server's own copies come from Ansible, not this page.
+        player = [m for m in data["mods"] if m["side"] != "server"]
+        blocked = self._blocked_files(pack["commit"], [m["curseforgeFile"] for m in player if m.get("curseforgeFile")])
         have_jar = self.setup.bootstrap_jar is not None and self.setup.bootstrap_jar.is_file()
         return _json({
             "address": self.monitor.address,
@@ -550,9 +565,40 @@ class App:
             "minecraft": pack["minecraft"], "neoforge": pack["neoforge"],
             "instance": {"available": have_jar, "url": "/prism/instance.zip", "memoryMb": self.setup.max_mb},
             "manual": [{"name": m["name"], "filename": m["filename"], "url": m["source"]["url"]}
-                       for m in data["mods"] if m.get("manual")],
+                       for m in player if m.get("manual") or m.get("curseforgeFile") in blocked],
             "pack": {"commit": pack["commit"], "version": pack["version"]},
         })
+
+    def _blocked_files(self, commit: str, file_ids: list[str]) -> set[str]:
+        """Which of these CurseForge hands out no URL for, as last learned for this pack commit.
+
+        Never asked on the request path: a stale or missing answer starts one background check
+        (never two at once) and the page answers now with what is known, the notes' list at the
+        least. An answer is refreshed after BLOCKED_TTL, since an author can switch distribution
+        off without the pack changing; after a failure the next try waits BLOCKED_RETRY.
+        """
+        check = self.setup.blocked_files if self.setup else None
+        if check is None or not file_ids:
+            return set()
+        now = self._clock()
+        with self._blocked_lock:
+            known = self._blocked if self._blocked and self._blocked[0] == commit else None
+            stale = known is None or now - known[2] >= BLOCKED_TTL
+            if stale and not self._blocked_running and now >= self._blocked_retry_at:
+                self._blocked_running = True
+                threading.Thread(target=self._check_blocked, args=(check, commit, list(file_ids)), daemon=True).start()
+            return known[1] if known else set()
+
+    def _check_blocked(self, check: Callable[[list[str]], set[str]], commit: str, file_ids: list[str]) -> None:
+        try:
+            found = check(file_ids)
+        except Exception:  # noqa: BLE001 - CurseForge down must not take /setup with it
+            sys.stderr.write("mod-browser: CurseForge blocked-file check failed\n" + traceback.format_exc())
+            with self._blocked_lock:
+                self._blocked_running, self._blocked_retry_at = False, self._clock() + BLOCKED_RETRY
+            return
+        with self._blocked_lock:
+            self._blocked, self._blocked_running = (commit, found, self._clock()), False
 
     def pack_changes(self, req: Req) -> Response:
         since = (req.query.get("since") or [""])[0]

@@ -51,6 +51,17 @@ class CurseForgeCatalog:
         res = self.http.json(f"{API}/mods/search?{q}", self._headers)
         return [to_project(p) for p in (res.get("data") or [])]
 
+    def blocked_files(self, file_ids: list[str]) -> set[str]:
+        """The file ids CurseForge hands out no download URL for: the author blocks outside
+        downloads, so packwiz-installer cannot fetch them and asks the player to, by hand.
+        Measured 2026-11-14: 13 of the pack's 304 CurseForge files, Create Aeronautics among them."""
+        blocked: set[str] = set()
+        for i in range(0, len(file_ids), 50):
+            res = self.http.post_json(f"{API}/mods/files", {"fileIds": [int(f) for f in file_ids[i:i + 50]]},
+                                      self._headers)
+            blocked |= {str(f["id"]) for f in res.get("data") or [] if not f.get("downloadUrl")}
+        return blocked
+
     def project(self, project_id: str) -> Project:
         res = self.http.json(f"{API}/mods/{quote(project_id, safe='')}", self._headers)
         return to_project(res["data"])

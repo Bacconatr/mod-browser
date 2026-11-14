@@ -28,17 +28,19 @@ def env(name: str, default: str) -> str:
     return os.environ.get(f"MOD_BROWSER_{name}", default)
 
 
-def browse_from_env() -> Browse | None:
+def curseforge_key_from_env() -> str:
+    key_file = Path(env("CURSEFORGE_API_KEY_FILE", "/run/secrets/aeronautics/curseforge"))
+    return key_file.read_text().strip() if key_file.is_file() else ""
+
+
+def browse_from_env(http: CachingHttp) -> Browse | None:
     """Catalog browsing needs the server's mods directory; without it, /add is off (404)."""
     mods_dir = Path(env("MODS_DIR", "/srv/mods"))
     if not mods_dir.is_dir():
         return None
-    http = CachingHttp(FetchHttp())
-    key_file = Path(env("CURSEFORGE_API_KEY_FILE", "/run/secrets/aeronautics/curseforge"))
-    key = key_file.read_text().strip() if key_file.is_file() else ""
     catalog = CompositeCatalog(
         ModrinthCatalog(http),
-        CurseForgeCatalog(http, key) if key else None,
+        curseforge_from_env(http),
         curseforge_search=env("CURSEFORGE_SEARCH", "0") == "1",
     )
     return Browse(catalog=catalog, jars=HttpJars(http), installed=DirInstalled(mods_dir))
@@ -65,17 +67,23 @@ def upstream_from_env(requests: Requests | None, catalog: PackCatalog) -> Upstre
     """The daily check of the base modpack. Needs requests (it files one) and the CurseForge key."""
     if requests is None:
         return None
-    key_file = Path(env("CURSEFORGE_API_KEY_FILE", "/run/secrets/aeronautics/curseforge"))
-    key = key_file.read_text().strip() if key_file.is_file() else ""
+    key = curseforge_key_from_env()
     source = CurseForgeUpstream(CachingHttp(FetchHttp(timeout=30.0, jar_timeout=120.0)), key) if key else None
     return UpstreamChecker(requests.queue, source, catalog, tz=env("LOG_TZ", "America/New_York"))
 
 
-def setup_from_env(pack_dir: Path) -> Setup:
+def curseforge_from_env(http: CachingHttp) -> CurseForgeCatalog | None:
+    key = curseforge_key_from_env()
+    return CurseForgeCatalog(http, key) if key else None
+
+
+def setup_from_env(pack_dir: Path, http: CachingHttp) -> Setup:
     public = env("PUBLIC_URL", "https://mods.example.com").rstrip("/")
     jar = env("BOOTSTRAP_JAR", "/srv/prism/packwiz-installer-bootstrap.jar")
+    curseforge = curseforge_from_env(http)
     return Setup(files=PackFiles(pack_dir), pack_url=f"{public}/pack/pack.toml", bootstrap_jar=Path(jar),
-                 min_mb=int(env("PRISM_MIN_MB", "2048")), max_mb=int(env("PRISM_MAX_MB", "6144")))
+                 min_mb=int(env("PRISM_MIN_MB", "2048")), max_mb=int(env("PRISM_MAX_MB", "6144")),
+                 blocked_files=curseforge.blocked_files if curseforge else None)
 
 
 def applier_from_env(requests: Requests | None) -> ApplyDesk | None:
@@ -111,12 +119,14 @@ def main() -> None:
                             max_age=float(env("STATUS_MAX_AGE", "10")), boots=boots)
     pack_dir = Path(env("PACK_DIR", "/srv/pack"))
     catalog = PackCatalog(pack_dir)
-    browse = browse_from_env()
+    # One HTTP client (and cache) for Modrinth and CurseForge, shared by browsing and /setup.
+    http = CachingHttp(FetchHttp())
+    browse = browse_from_env(http)
     requests = requests_from_env(browse, catalog)
     upstream = upstream_from_env(requests, catalog)
     app = App(monitor, catalog, name=env("SERVER_NAME", "Tel Aviv"), browse=browse, requests=requests,
               admin_password=admin_password_from_env(), applier=applier_from_env(requests),
-              setup=setup_from_env(pack_dir), upstream=upstream)
+              setup=setup_from_env(pack_dir, http), upstream=upstream)
     servers = Servers(
         app,
         public=(env("LISTEN_HOST", "0.0.0.0"), int(env("LISTEN_PORT", "8080"))),
