@@ -192,6 +192,34 @@ class LiveServerTest(HostCase):
         self.assertIsNone(self.host.players())
 
 
+class PromotionTest(HostCase):
+    def test_regular_manifest_is_published(self):
+        stage = self.root / "stage" / "data"
+        (stage / "mods").mkdir(parents=True)
+        (stage / "packwiz.json").write_text('{"new": true}')
+        self.host.promote_mods(stage.parent)
+        self.assertEqual((self.data / "packwiz.json").read_text(), '{"new": true}')
+
+    def test_staged_manifest_symlink_is_rejected(self):
+        stage = self.root / "stage" / "data"
+        (stage / "mods").mkdir(parents=True)
+        (stage / "packwiz.json").symlink_to(self.data / "packwiz.json")
+        with self.assertRaises(HostError):
+            self.host.promote_mods(stage.parent)
+        self.assertEqual((self.data / "packwiz.json").read_text(), "{}")
+
+    def test_live_manifest_symlink_is_rejected_without_touching_target(self):
+        stage = self.root / "stage" / "data"
+        (stage / "mods").mkdir(parents=True)
+        (stage / "packwiz.json").write_text('{"new": true}')
+        victim = self.root / "victim"
+        victim.write_text("untouched")
+        (self.data / "packwiz.json").unlink()
+        (self.data / "packwiz.json").symlink_to(victim)
+        with self.assertRaises(HostError):
+            self.host.promote_mods(stage.parent)
+        self.assertEqual(victim.read_text(), "untouched")
+
 class TestBootTest(HostCase):
     manifest = None
 
