@@ -23,6 +23,10 @@ written as a Modrinth entry when Modrinth hosts the byte-identical file (same
 sha1), so packwiz-installer downloads it instead of asking every player to fetch
 it by hand. On 2026-11-14 that was 10 of the pack's 13 blocked files, Create
 Aeronautics among them; an update must not put them back behind CurseForge.
+The entry keeps its CurseForge ids too, so the next release matches it as
+before. The sha1 match proves the bytes, not who runs the Modrinth project:
+its [update.modrinth] id is followed by nothing automatic here, and the 10
+twins of 2026-11-14 were checked by hand to be their authors' own projects.
 
 CurseForge answers here are hand-written from its documented schema in the
 tests: the key cannot be tried live from the tests.
@@ -44,7 +48,7 @@ from zoneinfo import ZoneInfo
 
 from .catalog import norm
 from .curseforge import API
-MODRINTH_FILES = "https://api.modrinth.com/v2/version_files"
+from .modrinth import API as MODRINTH_API
 from .queue import Queue
 from .versions import compare_versions
 
@@ -138,7 +142,10 @@ class Diff:
 
 
 def _op(mod: UpstreamMod, op: str, **extra: Any) -> dict[str, Any]:
-    where = ({"source": "modrinth", "projectId": mod.modrinth[0], "versionId": mod.modrinth[1], "downloadUrl": mod.modrinth[2]}
+    # A Modrinth twin keeps its CurseForge identity ([update.curseforge] beside [update.modrinth]),
+    # so a later release still matches it by project id, and can change or remove it.
+    where = ({"source": "modrinth", "projectId": mod.modrinth[0], "versionId": mod.modrinth[1], "downloadUrl": mod.modrinth[2],
+              "curseforge": {"projectId": mod.project_id, "fileId": mod.file_id}}
              if mod.modrinth else {"source": "curseforge", "projectId": mod.project_id, "versionId": mod.file_id})
     return {"op": op, "name": mod.name, **where,
             "versionNumber": mod.version, "channel": "release", "fileName": mod.file_name, "fileHash": mod.file_hash,
@@ -191,16 +198,20 @@ class CurseForgeUpstream:
         if not sha1s:
             return {}
         try:
-            found = self.http.post_json(MODRINTH_FILES, {"hashes": sha1s, "algorithm": "sha1"})  # no CurseForge key here
-        except Exception:  # noqa: BLE001
-            log.warning("Modrinth did not answer the blocked-file lookup; those files stay CurseForge entries")
+            found = self.http.post_json(f"{MODRINTH_API}/version_files",  # never with the CurseForge key
+                                        {"hashes": sha1s, "algorithm": "sha1"})
+            out: dict[str, tuple[str, str, str]] = {}
+            for sha1, v in (found.items() if isinstance(found, dict) else []):
+                if sha1 not in sha1s or not isinstance(v, dict):
+                    continue
+                f = next((f for f in v.get("files") or [] if isinstance(f, dict)
+                          and isinstance(f.get("hashes"), dict) and f["hashes"].get("sha1") == sha1), None)
+                if f and f.get("url") and v.get("project_id") and v.get("id"):
+                    out[sha1] = (str(v["project_id"]), str(v["id"]), str(f["url"]))
+            return out
+        except Exception:  # noqa: BLE001 - a malformed answer is the same as no answer
+            log.warning("Modrinth did not answer the blocked-file lookup usably; those files stay CurseForge entries")
             return {}
-        out: dict[str, tuple[str, str, str]] = {}
-        for sha1, v in (found.items() if isinstance(found, dict) else []):
-            f = next((f for f in v.get("files") or [] if (f.get("hashes") or {}).get("sha1") == sha1), None)
-            if f and f.get("url") and v.get("project_id") and v.get("id"):
-                out[sha1] = (str(v["project_id"]), str(v["id"]), str(f["url"]))
-        return out
 
     def _chunks(self, ids: list[str], size: int = 100):
         for i in range(0, len(ids), size):
@@ -236,13 +247,15 @@ class CurseForgeUpstream:
             if info is None:
                 raise LookupError(f"CurseForge does not know file {fid} of mod {pid}")
             sha1s[fid] = next((h.get("value") for h in info.get("hashes") or [] if h.get("algo") == 1), None)
-        twins = self._modrinth_twins([s for fid, s in sha1s.items() if s and not file_info[fid].get("downloadUrl")])
+        # A file CurseForge hands out no URL for: its author blocks outside downloads.
+        blocked = {fid: sha1 for fid, sha1 in sha1s.items() if sha1 and not file_info[fid].get("downloadUrl")}
+        twins = self._modrinth_twins(sorted(set(blocked.values())))
         for pid, fid in entries:
             info, sha1 = file_info[fid], sha1s[fid]
             file_name = str(info.get("fileName") or "")
             mods.append(UpstreamMod(pid, fid, names.get(pid) or str(info.get("displayName") or file_name), file_name,
                                     version_of(file_name), sha1, "sha1" if sha1 else None,
-                                    twins.get(sha1) if sha1 and not info.get("downloadUrl") else None))
+                                    twins.get(blocked[fid]) if fid in blocked else None))
         return Release(str(newest["id"]), str(newest.get("displayName") or newest.get("fileName") or ""),
                        version_of(str(newest.get("fileName") or "")) or str(newest.get("displayName") or ""),
                        str(newest.get("fileDate") or ""), tuple(mods))

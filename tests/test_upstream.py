@@ -15,8 +15,7 @@ import zipfile
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from mod_browser.packrepo import metafile_text
-from mod_browser.upstream import CurseForgeUpstream, Release, UpstreamChecker, UpstreamMod, _op
+from mod_browser.upstream import CurseForgeUpstream, Release, UpstreamChecker, UpstreamMod
 from tests.fakes import _git
 from tests.test_requests import RequestsCase
 
@@ -286,32 +285,52 @@ class CurseForgeAdapterTest(UpstreamCase):
             ("676721", "Create Aeronautics", "1.21.1-1.3.2", "ee"), ("1793084", "Create: Loconautics", "0.1.1BETA", "ff")])
         self.assertEqual([u.rsplit("/", 1)[1] for u, _ in http.posts], ["files", "mods", "version_files"])
 
-    def test_a_file_curseforge_blocks_is_written_from_modrinth_when_modrinth_has_the_same_bytes(self):
-        # 10 of the pack's 13 blocked files were on Modrinth byte for byte (2026-11-14); an update
-        # must not put them back behind CurseForge's "download it by hand".
+    def test_a_file_curseforge_blocks_is_found_on_modrinth_by_its_bytes(self):
         mods = {m.name: m for m in CurseForgeUpstream(self.Http(), "k").latest().mods}
-        aero = _op(mods["Create Aeronautics"], "add")
-        self.assertEqual((aero["source"], aero["projectId"], aero["versionId"], aero["fileHash"], aero["fileName"]),
-                         ("modrinth", "oWaK0Q19", "44pLdPGg", "ee", "create-aeronautics-bundled-1.21.1-1.3.2.jar"))
-        self.assertTrue(aero["downloadUrl"].startswith("https://cdn.modrinth.com/"))
-        self.assertIn('url = "https://cdn.modrinth.com/', metafile_text(aero))
-        loco = _op(mods["Create: Loconautics"], "add")               # not on Modrinth: stays a CurseForge entry
-        self.assertEqual((loco["source"], loco["projectId"]), ("curseforge", "1793084"))
-        connected = _op(mods["Create: Connected"], "add")            # CurseForge serves it: no lookup needed
-        self.assertEqual(connected["source"], "curseforge")
+        self.assertEqual(mods["Create Aeronautics"].modrinth[:2], ("oWaK0Q19", "44pLdPGg"))
+        self.assertIsNone(mods["Create: Loconautics"].modrinth)       # blocked, and not on Modrinth
+        self.assertIsNone(mods["Create: Connected"].modrinth)         # CurseForge serves it: never looked up
 
-    def test_modrinth_not_answering_leaves_blocked_files_as_curseforge_entries(self):
-        http = self.Http()
-        real = http.post_json
+    def test_modrinth_not_answering_or_answering_nonsense_leaves_blocked_files_as_curseforge_entries(self):
+        for answer in (OSError("api.modrinth.com: timed out"), {"ee": None}, {"ee": {"files": ["x"]}}, ["nonsense"]):
+            http = self.Http()
+            real = http.post_json
 
-        def flaky(url, body, headers=None):
-            if "modrinth" in url:
-                raise OSError("api.modrinth.com: timed out")
-            return real(url, body, headers)
-        http.post_json = flaky
-        mods = {m.name: m for m in CurseForgeUpstream(http, "k").latest().mods}
-        self.assertIsNone(mods["Create Aeronautics"].modrinth)
-        self.assertEqual(_op(mods["Create Aeronautics"], "add")["source"], "curseforge")
+            def flaky(url, body, headers=None, answer=answer):
+                if "modrinth" not in url:
+                    return real(url, body, headers)
+                if isinstance(answer, Exception):
+                    raise answer
+                return answer
+            http.post_json = flaky
+            mods = {m.name: m for m in CurseForgeUpstream(http, "k").latest().mods}
+            self.assertIsNone(mods["Create Aeronautics"].modrinth, answer)
+
+
+class ModrinthTwinTest(UpstreamCase):
+    """Through the owner's upstream request: what the applier is handed for a blocked file."""
+
+    TWIN = ("oWaK0Q19", "44pLdPGg", "https://cdn.modrinth.com/data/oWaK0Q19/versions/44pLdPGg/create-aeronautics-bundled-1.21.1-1.3.2.jar")
+
+    def release(self, *mods: UpstreamMod) -> Release:
+        return Release("9400000", "v2.10", "2.10", "2026-11-20T10:00:00Z", RELEASE.mods + mods)
+
+    def test_a_blocked_file_modrinth_hosts_is_added_from_modrinth_and_keeps_its_curseforge_ids(self):
+        aero = UpstreamMod("676721", "8763471", "Create Aeronautics", "create-aeronautics-bundled-1.21.1-1.3.2.jar",
+                           "1.21.1-1.3.2", "ee", "sha1", self.TWIN)
+        self.source.release = self.release(aero)
+        self.checker.check()
+        op = {o["name"]: o for o in self.only()["added"]}["Create Aeronautics"]
+        self.assertEqual((op["source"], op["projectId"], op["versionId"], op["downloadUrl"]), ("modrinth", *self.TWIN))
+        self.assertEqual(op["curseforge"], {"projectId": "676721", "fileId": "8763471"})
+        self.assertEqual(op["fileName"], "create-aeronautics-bundled-1.21.1-1.3.2.jar")
+
+    def test_a_blocked_file_modrinth_does_not_host_stays_a_curseforge_entry(self):
+        loco = UpstreamMod("1793084", "9545733", "Create: Loconautics", "loconautics-0.1.1BETA.jar", "0.1.1BETA", "ff", "sha1")
+        self.source.release = self.release(loco)
+        self.checker.check()
+        op = {o["name"]: o for o in self.only()["added"]}["Create: Loconautics"]
+        self.assertEqual((op["source"], op["projectId"], op["versionId"]), ("curseforge", "1793084", "9545733"))
 
 
 if __name__ == "__main__":
