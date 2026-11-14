@@ -18,7 +18,7 @@ from mod_browser.prism import PackFiles
 from mod_browser.status import StatusMonitor
 from mod_browser.curseforge import CurseForgeCatalog
 from mod_browser.web import App, Servers, Setup
-from tests.fakes import LATER_MOD, FakeServer, add_mod, make_pack
+from tests.fakes import LATER_MOD, FakeServer, _git, _write_index, add_mod, make_pack
 
 BOOTSTRAP = b"PK-not-really-a-jar-but-bytes-we-can-compare"
 PACK_URL = "https://mods.example.com/pack/pack.toml"
@@ -132,6 +132,45 @@ class ChangesTest(SetupCase):
         self.start(later_mod=True)
         r = self.json("/api/pack/changes?since=2026-11-14")
         self.assertEqual((r["changed"], r["added"]), (False, []))
+
+    def upstream_update(self) -> None:
+        """An upstream bump like v3.0HF's: one mod updated, one removed, the pack's version moved."""
+        connected = self.pack / "mods/create-connected.pw.toml"
+        connected.write_text(connected.read_text().replace("create_connected-1.3.3-mc1.21.1.jar", "create_connected-1.4.0-mc1.21.1.jar"))
+        (self.pack / "mods/create-deep-seas.pw.toml").unlink()
+        toml = self.pack / "pack.toml"
+        toml.write_text(toml.read_text().replace('version = "2.9-1"', 'version = "3.0HF"'))
+        _write_index(self.pack)
+        index = self.pack / "index.toml"
+        index.write_text(index.read_text() + '\n[[files]]\nfile = "config/some file.toml"\nhash = "0"\n')
+        _git(self.pack, "add", "-A")
+        _git(self.pack, "commit", "-q", "-m", "Update to Upstream update: v3.0HF", date="2026-11-14T01:02:02-05:00")
+
+    def test_an_upstream_update_lists_updated_and_removed_mods_and_the_new_pack_version(self):
+        self.start(later_mod=True)
+        self.upstream_update()
+        r = self.json("/api/pack/changes?since=2026-11-14")
+        self.assertTrue(r["changed"])
+        self.assertEqual(r["updated"], [{"name": "Create: Connected", "from": "1.3.3", "to": "1.4.0"}])
+        self.assertEqual(r["removed"], [{"name": "Create Deep Seas [BETA]"}])
+        self.assertEqual(r["added"], [])  # Straw Statues came the day before
+        self.assertEqual(r["pack"], {"version": {"from": "2.9-1", "to": "3.0HF"}})
+        self.assertEqual(r["counts"], {"added": 0, "updated": 1, "removed": 1})
+        self.assertEqual([e["title"] for e in r["events"]], ["Upstream update: v3.0HF"])
+
+    def test_changes_on_the_day_they_last_played_count(self):
+        self.start(later_mod=True)
+        self.upstream_update()
+        r = self.json("/api/pack/changes?since=2026-11-13")
+        self.assertEqual([m["name"] for m in r["added"]], ["Straw Statues"])
+        self.assertEqual(r["counts"], {"added": 1, "updated": 1, "removed": 1})
+        self.assertEqual(len(r["events"]), 2)
+
+    def test_since_before_the_pack_existed_never_lists_the_base_pack_as_added(self):
+        self.start(later_mod=True)
+        r = self.json("/api/pack/changes?since=2026-01-01")
+        self.assertEqual([m["name"] for m in r["added"]], ["Straw Statues"])
+        self.assertEqual((r["updated"], r["removed"]), ([], []))
 
     def test_a_bad_date_is_refused(self):
         self.start()

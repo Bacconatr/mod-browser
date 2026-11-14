@@ -16,6 +16,7 @@ seconds.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import threading
@@ -110,6 +111,7 @@ class PackCatalog:
         self._checked = float("-inf")
         self._cache: dict[str, Any] | None = None
         self._error: Exception | None = None
+        self._changes_lock = threading.Lock()
 
     def _git(self, *args: str) -> str:
         # safe.directory: the repo is root's, mounted read-only, and the app
@@ -213,6 +215,113 @@ class PackCatalog:
             "count": len(entries),
             "mods": entries,
         }
+
+
+    # ---- what changed since a date: the whole pack diffed, not just additions ----
+    def _first_parent(self) -> list[tuple[str, str, str]]:
+        """(sha, commit day in its own zone, subject), newest first, along main's first-parent line."""
+        log = self._git("log", "--first-parent", "--format=%H%x1f%cI%x1f%s")
+        return [tuple(line.split("\x1f", 2)) for line in log.splitlines() if line]  # type: ignore[misc]
+
+    def _blobs(self, rev: str, paths: list[str]) -> dict[str, str]:
+        """Each path's text at `rev`, in one `git cat-file --batch`; a path missing there is left out."""
+        if not paths:
+            return {}
+        out = subprocess.run(
+            ["git", "-c", "safe.directory=*", "-C", str(self.root), "cat-file", "--batch"],
+            input="".join(f"{rev}:{p}\n" for p in paths).encode(), check=True, capture_output=True, timeout=20,
+        ).stdout
+        found, at = {}, 0
+        for path in paths:
+            end = out.index(b"\n", at)
+            header = out[at:end].decode().split()
+            at = end + 1
+            if len(header) < 3 or header[1] == "missing":
+                continue
+            size = int(header[2])
+            found[path] = out[at:at + size].decode("utf-8", "replace")
+            at += size + 1
+        return found
+
+    def _state(self, rev: str) -> dict[str, Any]:
+        """The pack's versions and every mod's name and filename at `rev`."""
+        top = self._blobs(rev, ["pack.toml"])
+        pack = tomllib.loads(top.get("pack.toml", ""))
+        index_file = pack.get("index", {}).get("file", "index.toml")
+        index = tomllib.loads(self._blobs(rev, [index_file]).get(index_file, ""))
+        paths = [f.get("file", "") for f in index.get("files", [])
+                 if f.get("metafile") or f.get("file", "").endswith(".pw.toml")]
+        mods = {}
+        for path, text in self._blobs(rev, paths).items():
+            meta = tomllib.loads(text)
+            mods[path] = {"name": meta.get("name", meta.get("filename", path)), "filename": meta.get("filename", "")}
+        versions = pack.get("versions", {})
+        return {"version": pack.get("version"), "minecraft": versions.get("minecraft"),
+                "neoforge": versions.get("neoforge"), "mods": mods}
+
+    def changes(self, since: str) -> dict[str, Any]:
+        """Everything that differs between the pack as it stood before `since` (a YYYY-MM-DD day, in each
+        commit's own zone, as the catalog's addedOn is) and the pack now: added, updated and removed mods,
+        the pack's own version, and the commits in between. Before the pack's first commit, the first
+        commit is the baseline, so the base pack never reads as "added"."""
+        self.catalog()  # raises PackUnreadable the same way the rest of the API does
+        commits = self._first_parent()
+        head = commits[0][0]
+        before = [c for c in commits if c[1][:10] < since]
+        base = before[0][0] if before else commits[-1][0]
+        key = (head, base)
+        with self._changes_lock:
+            return {"since": since, **self._diff(key, commits, base, head)}
+
+    def _diff(self, key: tuple[str, str], commits: list[tuple[str, str, str]],
+              base: str, head: str) -> dict[str, Any]:
+        if getattr(self, "_changes_key", None) != key:
+            old, new = self._state(base), self._state(head)
+            minecraft = new["minecraft"] or "1.21.1"
+            history, _ = self._history()
+
+            def versions(before: str, after: str) -> tuple[str, str]:
+                """Two readable versions; failing a parse, the filenames with what they share trimmed off."""
+                a, b = version_from_filename(before, minecraft), version_from_filename(after, minecraft)
+                if a and b and a != b:
+                    return a, b
+                lead = len(os.path.commonprefix([before, after]))
+                lead = max(before.rfind("-", 0, lead), before.rfind("_", 0, lead), before.rfind(" ", 0, lead), -1) + 1
+                tail = len(os.path.commonprefix([before[lead:][::-1], after[lead:][::-1]]))
+                return before[lead:len(before) - tail] or before, after[lead:len(after) - tail] or after
+
+            added, updated, removed = [], [], []
+            for path, mod in new["mods"].items():
+                was = old["mods"].get(path)
+                if was is None:
+                    commit = history.get(path, {})
+                    added.append({"name": mod["name"], "on": commit.get("on"), "by": commit.get("by")})
+                elif was["filename"] != mod["filename"]:
+                    frm, to = versions(was["filename"], mod["filename"])
+                    updated.append({"name": mod["name"], "from": frm, "to": to})
+            for path, mod in old["mods"].items():
+                if path not in new["mods"]:
+                    removed.append({"name": mod["name"]})
+            for group in (added, updated, removed):
+                group.sort(key=lambda m: m["name"].lower())
+            pack = {k: {"from": old[k], "to": new[k]} for k in ("version", "neoforge", "minecraft") if old[k] != new[k]}
+            # The commits after the baseline, newest first: what a player would call "the updates". A batch
+            # lands as a merge ("Apply batch 1"), so it is the commits inside it that say what happened.
+            events = []
+            if base != head:
+                log = self._git("log", "--no-merges", "-n", "20", "--format=%x1e%cI%x1f%s%x1f%B", f"{base}..{head}")
+                for record in log.split("\x1e")[1:]:
+                    when, subject, body = record.split("\x1f", 2)
+                    trailer = _TRAILER.search(body)
+                    events.append({"on": when[:10], "title": re.sub(r"^Update to (?=Upstream update)", "", subject),
+                                   "by": trailer.group(1) if trailer else None})
+            self._changes_key, self._changes = key, {
+                "added": added, "updated": updated, "removed": removed, "pack": pack, "events": events,
+                "latest": commits[0][1][:10]}
+        data = self._changes
+        changed = bool(data["added"] or data["updated"] or data["removed"] or data["pack"])
+        return {"changed": changed, **data,
+                "counts": {k: len(data[k]) for k in ("added", "updated", "removed")}}
 
 
 def search(entries: list[dict[str, Any]], query: str = "", side: str = "", kind: str = "") -> list[dict[str, Any]]:
