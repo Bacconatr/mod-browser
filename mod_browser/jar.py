@@ -155,7 +155,9 @@ def _nested(zf: zipfile.ZipFile, names: set[str], depth: int) -> list[ProvidedMo
         try:
             with _spooled(zf, path, _MAX_NESTED_JAR) as nested:
                 inner = read_jar_info(nested, depth + 1)
-        except (JarError, zipfile.BadZipFile):
+        # OSError: past 1 MiB the copy is on disk, which can be full. One nested jar
+        # lost is one provided id lost, never the outer jar and everything it provides.
+        except (JarError, zipfile.BadZipFile, OSError):
             continue
         if inner:
             found.extend(inner.provides)

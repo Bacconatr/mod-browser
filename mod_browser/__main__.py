@@ -44,11 +44,17 @@ def browse_from_env() -> Browse | None:
     return Browse(catalog=catalog, jars=HttpJars(http), installed=DirInstalled(mods_dir))
 
 
+def data_dir_from_env() -> Path | None:
+    """The writable data directory (requests.db, boot-times.json), when it exists."""
+    path = Path(env("DATA_DIR", "/srv/data"))
+    return path if path.is_dir() else None
+
+
 def requests_from_env(browse: Browse | None, catalog: PackCatalog) -> Requests | None:
     """Requests need browsing, a writable data directory and the server's whitelist; else they are off."""
-    data_dir = Path(env("DATA_DIR", "/srv/data"))
+    data_dir = data_dir_from_env()
     whitelist = Path(env("WHITELIST_FILE", "/srv/whitelist.json"))
-    if browse is None or not data_dir.is_dir() or not whitelist.is_file():
+    if browse is None or data_dir is None or not whitelist.is_file():
         return None
     queue = Queue(data_dir / "requests.db")
     return Requests(queue=queue, intake=Intake(queue, browse.resolve, FileWhitelist(whitelist),
@@ -99,8 +105,8 @@ def main() -> None:
         log_tz=env("LOG_TZ", "America/New_York"),
     )
     # How long a boot usually takes is kept beside the request queue, so it survives a restart.
-    data_dir = Path(env("DATA_DIR", "/srv/data"))
-    boots = BootTimes(data_dir / "boot-times.json" if data_dir.is_dir() else None)
+    data_dir = data_dir_from_env()
+    boots = BootTimes(data_dir / "boot-times.json" if data_dir else None)
     monitor = StatusMonitor(server, address=env("SERVER_ADDRESS", "play.example.com"),
                             max_age=float(env("STATUS_MAX_AGE", "10")), boots=boots)
     pack_dir = Path(env("PACK_DIR", "/srv/pack"))

@@ -10,7 +10,7 @@ const STATES = {
   starting: { label: "Starting up", detail: "The server is booting or restarting. It usually takes a few minutes." },
   down: { label: "Down or restarting", detail: "The server isn't running right now. It comes back by itself after a restart; if it stays down, tell the owner." },
   unknown: { label: "Can't reach the status service", detail: "This page couldn't ask the server for its state. It tries again every 15 seconds." },
-  site: { label: "The site is restarting", detail: "This page's own service is coming back; it usually takes under a minute. The game server is not affected. This page tries again every 15 seconds." },
+  site: { label: "The site is restarting", detail: "This page's service, or the machine it runs on, is restarting. If it is only the page, it is back in under a minute. This page tries again every 15 seconds." },
 };
 
 function el(tag, props = {}, children = []) {
@@ -46,15 +46,19 @@ const valid = (iso) => { const at = iso ? new Date(iso) : null; return at && !Nu
 
 // "Back online around 4:12 AM (in about 6 min)": the server's estimate, learned from past restarts.
 // A batch being applied has its own estimate; any other boot (a crash, a host reboot) uses `boot`.
+const inMinutes = (at) => Math.max(1, Math.round((at.getTime() - Date.now()) / 60000));
+
 function backOnline(status) {
   const batch = valid(status && status.apply && status.apply.backOnlineBy);
+  if (batch) return `Back online around ${clockOf(batch)} (in about ${inMinutes(batch)} min).`;
   const boot = status && status.state === "starting" ? status.boot : null;
-  const at = batch || valid(boot && boot.readyBy);
-  if (!at) return "";
-  const mins = Math.max(1, Math.round((at.getTime() - Date.now()) / 60000));
-  const since = !batch && valid(boot.since);
-  const began = since ? ` Booting since ${clockOf(since)} (${ago(boot.since)}).` : "";
-  return `${began} Usually ready around ${clockOf(at)} (in about ${mins} min).`.trim();
+  const since = valid(boot && boot.since);
+  if (!since) return "";
+  const began = `Booting since ${clockOf(since)} (${ago(boot.since)}).`;
+  const usual = Math.max(1, Math.round(boot.typicalSeconds / 60));
+  if (boot.overdue) return `${began} That is longer than the usual ${usual} min; if it stays this way, tell the owner.`;
+  const ready = valid(boot.readyBy);
+  return ready ? `${began} Usually ready around ${clockOf(ready)} (in about ${inMinutes(ready)} min).` : began;
 }
 
 // "Down since 2:16 AM (3 min ago)": the first time the site saw it stopped.
