@@ -242,8 +242,6 @@ class ManualDownloadTest(SetupCase):
         self.assertEqual(tomllib.loads(body.decode())["side"], "server")  # `-s client` leaves it out
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 DEEP_SEAS_ON_CURSEFORGE = """\
@@ -303,3 +301,16 @@ class CurseForgeImportTest(SetupCase):
         self.start()
         self.all_on_curseforge()
         self.assertEqual(self.get("/curseforge/pack.zip")[2], self.get("/curseforge/pack.zip")[2])
+
+
+class PageScriptTest(unittest.TestCase):
+    def test_every_id_the_setup_script_looks_up_is_on_the_setup_page(self):
+        static = Path(__file__).resolve().parent.parent / "mod_browser" / "static"
+        import re
+        used = set(re.findall(r'\$\("([\w-]+)"\)', (static / "setup.js").read_text()))
+        page = (static / "setup.html").read_text()
+        self.assertEqual(sorted(i for i in used if f'id="{i}"' not in page), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

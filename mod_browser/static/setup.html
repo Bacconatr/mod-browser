@@ -26,12 +26,14 @@
   <section id="curseforge" class="glass panel">
     <h2>With the CurseForge app (easiest)</h2>
     <ol>
+      <li><strong>Install the CurseForge app</strong> from <a href="https://www.curseforge.com/download/app" rel="noopener noreferrer">curseforge.com/download/app</a> if you do not have it, and pick Minecraft in it.</li>
       <li><strong>Download the pack.</strong> <a id="cf-download" class="button solid" href="/curseforge/pack.zip" download>Download for CurseForge</a>
         <span id="cf-note" class="muted small"></span></li>
-      <li><strong>Import it.</strong> In the CurseForge app open <em>Minecraft</em>, choose <em>Create Custom Profile</em>, then <em>Import</em> (beside the Create button), and pick the zip. The app downloads every mod itself, Loconautics included.</li>
+      <li><strong>Import it.</strong> In the CurseForge app open <em>Minecraft</em>, choose <em>Create Custom Profile</em>, then <em>Import</em> (beside the Create button), and pick the zip. The app downloads every mod itself, Loconautics included. (If the buttons are named a little differently in your version, look for importing a profile from a zip.)</li>
       <li><strong>Play</strong> the new profile and join <code>{{address}}</code> from <em>Multiplayer</em>.</li>
     </ol>
-    <p class="muted small">When the pack changes, download it again and import it the same way (delete the old profile first). The check at the bottom of this page tells you whether it changed.</p>
+    <p class="muted small" id="cf-memory-note">Give it more memory: in the app's settings, under Minecraft, set the allocated memory to about 6 GB. The default is too little for this many mods.</p>
+    <p class="muted small">This profile does not update itself. When the pack changes (the check at the bottom of this page says so), download it again and import it as a new profile; delete the old one once the new one joins.</p>
   </section>
   <section class="glass panel">
     <h2>With Prism Launcher (updates itself)</h2>
@@ -43,6 +45,7 @@
     <li><strong>Launch it.</strong> The first launch downloads the mods (a few minutes). Every launch after that updates them to match the server, so you never fail a login over a mismatch.</li>
     <li><strong>Join</strong> <code id="address">{{address}}</code> from <em>Multiplayer</em>.</li>
     </ol>
+    <p class="muted small" id="memory-note"></p>
   </section>
   <section id="manual" class="glass panel" hidden>
     <h2>Prism only: mods you download by hand</h2>
