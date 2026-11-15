@@ -96,3 +96,16 @@ class PackFiles:
             return target.read_bytes()
         except (OSError, ValueError, tomllib.TOMLDecodeError):
             return None
+
+    def overrides(self) -> dict[str, bytes]:
+        """The pack's own files that are not metafiles (config and the like), by their path in the pack."""
+        index = tomllib.loads((self.root / "index.toml").read_text())
+        found: dict[str, bytes] = {}
+        for item in index.get("files", []):
+            rel = item.get("file")
+            if not isinstance(rel, str) or item.get("metafile") or rel.endswith(".pw.toml"):
+                continue
+            data = self.read(rel)
+            if data is not None:
+                found[rel] = data
+        return found

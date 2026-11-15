@@ -75,6 +75,17 @@ def _curseforge_file(meta: dict[str, Any]) -> str | None:
     return str(file_id) if isinstance(file_id, int) else None
 
 
+def _curseforge_ids(meta: dict[str, Any]) -> dict[str, int] | None:
+    """The CurseForge project and file this entry is, whatever it downloads from: a mod fetched
+    from Modrinth keeps them when CurseForge hosts the byte-identical file. The CurseForge-app
+    modpack lists entries by these ids, so an entry without them cannot be in it."""
+    cf = (meta.get("update") or {}).get("curseforge") or {}
+    project, file_id = cf.get("project-id"), cf.get("file-id")
+    if isinstance(project, int) and isinstance(file_id, int):
+        return {"project": project, "file": file_id}
+    return None
+
+
 def extras_from_notes(notes: str) -> dict[str, str | None]:
     """Metafile path -> the first date its note mentions, for the pre-packwiz extras."""
     section = _EXTRA_SECTION.search(notes)
@@ -202,6 +213,7 @@ class PackCatalog:
                 # A metadata:curseforge entry's file; /api/setup asks CurseForge which of these it
                 # hands out no URL for (the author blocks outside downloads), so a player is told.
                 "curseforgeFile": _curseforge_file(meta),
+                "curseforge": _curseforge_ids(meta),
                 "origin": origin,
                 "addedBy": by,
                 "addedOn": on,
