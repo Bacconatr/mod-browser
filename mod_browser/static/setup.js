@@ -26,6 +26,11 @@ async function details() {
       $("download").removeAttribute("href");
       $("download-note").textContent = "The instance is not published yet. Ask the owner.";
     }
+    if (!data.curseforge.available) {
+      $("cf-download").setAttribute("aria-disabled", "true");
+      $("cf-download").removeAttribute("href");
+      $("cf-note").textContent = `Not available right now: ${data.curseforge.missing.join(", ")} ${data.curseforge.missing.length === 1 ? "is" : "are"} not on CurseForge. Use Prism below.`;
+    }
     if (data.manual.length) {
       $("manual").hidden = false;
       const list = $("manual-list");
@@ -73,7 +78,7 @@ async function check(since) {
       return;
     }
     notice.hidden = false;
-    notice.textContent = `The pack changed since ${day(since)}. Just launch the game: it updates itself first.`;
+    notice.textContent = `The pack changed since ${day(since)}. Prism: just launch, it updates itself first. CurseForge app: download the pack again and import it.`;
 
     box.append(el("div", { class: "tiles" }, [
       tile("added", data.counts.added, "added"),

@@ -199,6 +199,18 @@ culprit; the owner re-adds them one at a time with `add directly`); requests in
 one batch are resolved against the pack individually, so two that conflict with
 each other are caught by the test boot, not before; a manual "roll back" of an
 already-applied batch is not built.
+## Setting up the game: the CurseForge import (`/setup`)
+
+`/curseforge/pack.zip` is a CurseForge-app modpack built on request from the
+live pack: `manifest.json` names Minecraft and NeoForge from `pack.toml` and
+every entry not marked `side = "server"` by its `[update.curseforge]` project
+and file id (a Modrinth-fetched mod keeps its CurseForge twin's ids), with the
+index's non-metafile files under `overrides/`. The CurseForge app downloads
+even the mods whose authors block other launchers, so nothing is fetched by
+hand. It is offered only while every player-side entry has CurseForge ids;
+otherwise it is a 404 and `/api/setup`'s `curseforge.missing` names the rest.
+It does not update itself: after a pack change a friend imports it again.
+
 ## Setting up the game: the Prism instance (`/setup`)
 
 `/prism/instance.zip` is a Prism Launcher instance built on request from the

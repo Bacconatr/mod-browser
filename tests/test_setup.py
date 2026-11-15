@@ -242,5 +242,75 @@ class ManualDownloadTest(SetupCase):
         self.assertEqual(tomllib.loads(body.decode())["side"], "server")  # `-s client` leaves it out
 
 
+
+
+DEEP_SEAS_ON_CURSEFORGE = """\
+name = "Create Deep Seas [BETA]"
+filename = "create_submarine-3.4.5.jar"
+side = "both"
+
+[download]
+url = "https://cdn.modrinth.com/data/mva5q4qZ/versions/twCxciVp/create_submarine-3.4.5.jar"
+hash-format = "sha512"
+hash = "48ba"
+
+[update]
+[update.curseforge]
+file-id = 9290742
+project-id = 1533137
+[update.modrinth]
+mod-id = "mva5q4qZ"
+version = "twCxciVp"
+"""
+
+
+class CurseForgeImportTest(SetupCase):
+    def all_on_curseforge(self) -> None:
+        """Every player-side entry carries CurseForge ids: the Modrinth one keeps its twin's."""
+        add_mod(self.pack, "mods/create-deep-seas.pw.toml", DEEP_SEAS_ON_CURSEFORGE, "Keep Deep Seas' CurseForge ids\n",
+                "2026-11-15T09:00:00-05:00")
+        index = self.pack / "index.toml"
+        index.write_text(index.read_text() + '\n[[files]]\nfile = "config/some file.toml"\nhash = "0"\n')
+        _git(self.pack, "commit", "-qam", "Keep the config override listed", date="2026-11-15T09:01:00-05:00")
+
+    def test_a_player_side_mod_with_no_curseforge_ids_keeps_the_import_off_and_is_named(self):
+        self.start()
+        cf = self.json("/api/setup")["curseforge"]
+        self.assertEqual((cf["available"], cf["missing"]), (False, ["Create Deep Seas [BETA]"]))
+        self.assertEqual(self.get("/curseforge/pack.zip")[0], 404)
+
+    def test_the_import_lists_every_player_side_entry_by_curseforge_id_with_the_servers_neoforge(self):
+        self.start()
+        self.all_on_curseforge()
+        self.assertTrue(self.json("/api/setup")["curseforge"]["available"])
+        code, headers, body = self.get("/curseforge/pack.zip")
+        self.assertEqual((code, headers["Content-Type"]), (200, "application/zip"))
+        self.assertIn('filename="Tel-Aviv-CurseForge.zip"', headers["Content-Disposition"])
+        zf = zipfile.ZipFile(io.BytesIO(body))
+        self.assertEqual(sorted(zf.namelist()), ["manifest.json", "overrides/config/some file.toml"])
+        manifest = json.loads(zf.read("manifest.json"))
+        self.assertEqual(manifest["minecraft"], {"version": "1.21.1", "modLoaders": [{"id": "neoforge-21.1.264", "primary": True}]})
+        self.assertEqual((manifest["manifestType"], manifest["manifestVersion"], manifest["overrides"]),
+                         ("minecraftModpack", 1, "overrides"))
+        # The server-only crash fix is left out; the client-only shader pack is in.
+        self.assertEqual({(f["projectID"], f["fileID"]) for f in manifest["files"]},
+                         {(947914, 8777573), (1533137, 9290742), (627557, 1)})
+        self.assertTrue(all(f["required"] for f in manifest["files"]))
+
+    def test_the_import_is_byte_identical_between_downloads(self):
+        self.start()
+        self.all_on_curseforge()
+        self.assertEqual(self.get("/curseforge/pack.zip")[2], self.get("/curseforge/pack.zip")[2])
+
+
+class PageScriptTest(unittest.TestCase):
+    def test_every_id_the_setup_script_looks_up_is_on_the_setup_page(self):
+        static = Path(__file__).resolve().parent.parent / "mod_browser" / "static"
+        import re
+        used = set(re.findall(r'\$\("([\w-]+)"\)', (static / "setup.js").read_text()))
+        page = (static / "setup.html").read_text()
+        self.assertEqual(sorted(i for i in used if f'id="{i}"' not in page), [])
+
+
 if __name__ == "__main__":
     unittest.main()

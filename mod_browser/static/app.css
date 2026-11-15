@@ -420,6 +420,7 @@ input[type="date"] { width: auto; min-width: 11rem; color-scheme: dark; }
 .steps ol > li .button { margin: 0.35rem 0.5rem 0.1rem 0; }
 .steps h2 { font-size: 1.25rem; letter-spacing: -0.01em; margin-bottom: 0.5rem; }
 .steps section > p.muted { max-width: 70ch; }
+.steps section ol { padding-left: 0; padding-right: 0; }
 .steps code { font: 600 0.95em var(--mono); background: var(--glass-strong); padding: 0.15em 0.5em; border-radius: 0.4rem; border: 1px solid var(--glass-edge); }
 .notice {
   padding: 0.9rem 1.1rem; border-radius: var(--r-control);

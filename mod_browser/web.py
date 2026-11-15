@@ -69,6 +69,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from . import cfpack
 from .catalog import SOURCES, camel, default_version
 from .applier import DeskRefused
 from .intake import Intake, Refused
@@ -250,6 +251,7 @@ class App:
         self._owner_lock = threading.Lock()
         self.setup = setup
         self._zip: tuple[Any, bytes] | None = None
+        self._cf_zip: tuple[str, bytes] | None = None
         self.monitor, self.catalog, self.name, self.browse = monitor, catalog, name, browse
         self.requests = requests if browse is not None else None
         # An unset or short password leaves /admin shut (404), never open.
@@ -559,11 +561,15 @@ class App:
         player = [m for m in data["mods"] if m["side"] != "server"]
         blocked = self._blocked_files(pack["commit"], [m["curseforgeFile"] for m in player if m.get("curseforgeFile")])
         have_jar = self.setup.bootstrap_jar is not None and self.setup.bootstrap_jar.is_file()
+        cf_missing = cfpack.missing(data["mods"])
         return _json({
             "address": self.monitor.address,
             "packUrl": self.setup.pack_url,
             "minecraft": pack["minecraft"], "neoforge": pack["neoforge"],
             "instance": {"available": have_jar, "url": "/prism/instance.zip", "memoryMb": self.setup.max_mb},
+            # The CurseForge-app import: offered only while every player-side entry has CurseForge ids.
+            "curseforge": {"available": not cf_missing, "url": "/curseforge/pack.zip",
+                           "missing": [m["name"] for m in cf_missing]},
             "manual": [{"name": m["name"], "filename": m["filename"], "url": m["source"]["url"]}
                        for m in player if m.get("manual") or m.get("curseforgeFile") in blocked],
             "pack": {"commit": pack["commit"], "version": pack["version"]},
@@ -621,6 +627,20 @@ class App:
         return 200, "application/zip", self._zip[1], {
             "Content-Disposition": f'attachment; filename="{filename}.zip"', "Cache-Control": "no-cache"}
 
+    def curseforge_zip(self, req: Req) -> Response:
+        data = self.catalog.catalog()
+        if cfpack.missing(data["mods"]):
+            return _error(HTTPStatus.NOT_FOUND, "the CurseForge import is not available: some mods are not on CurseForge")
+        commit = data["pack"]["commit"]
+        if self._cf_zip is None or self._cf_zip[0] != commit:
+            pack = tomllib.loads((self.setup.files.root / "pack.toml").read_text())
+            version = f"{data['pack'].get('version') or 'pack'} ({commit[:7]})"
+            blob = cfpack.modpack_zip(pack, data["mods"], self.setup.files.overrides(), name=self.name, version=version)
+            self._cf_zip = (commit, blob)
+        filename = (re.sub(r"[^A-Za-z0-9]+", "-", self.name).strip("-") or "pack") + "-CurseForge"
+        return 200, "application/zip", self._cf_zip[1], {
+            "Content-Disposition": f'attachment; filename="{filename}.zip"', "Cache-Control": "no-cache"}
+
     def pack_file(self, req: Req) -> Response:
         rel = unquote(req.match.group(1))
         data = None if "\x00" in rel or "\\" in rel else self.setup.files.read(rel)
@@ -639,6 +659,7 @@ class App:
             ("GET", re.compile(r"^/api/setup$"), answer(self.setup_info)),
             ("GET", re.compile(r"^/api/pack/changes$"), answer(self.pack_changes)),
             ("GET", re.compile(r"^/prism/instance\.zip$"), answer(self.prism_zip)),
+            ("GET", re.compile(r"^/curseforge/pack\.zip$"), answer(self.curseforge_zip)),
             ("GET", re.compile(r"^/pack/(.{1,200})$"), answer(self.pack_file)),
         ]
 
