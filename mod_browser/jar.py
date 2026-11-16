@@ -135,6 +135,14 @@ def read_jar_info(source: IO[bytes], depth: int = 0) -> JarInfo | None:
         names = set(zf.namelist())
         toml_name = next((n for n in TOML_NAMES if n in names), None)
         if toml_name is None:
+            # Kotlin for Forge's distribution is an FML LIBRARY containing a
+            # kffmod jar, rather than a top-level mods.toml. Inspect only bounded
+            # JarJar entries; arbitrary archives still provide no mod identity.
+            if depth < _MAX_DEPTH and "META-INF/jarjar/metadata.json" in names:
+                nested = _nested(zf, names, depth)
+                if nested.provides:
+                    return JarInfo(provides=nested.provides, bundles=nested.bundles,
+                                   dependencies=nested.dependencies, own_dependencies=[])
             return None
         mods, deps = parse_mods_toml(_read(zf, toml_name, _MAX_TOML).decode("utf-8", "replace"))
         manifest = ""

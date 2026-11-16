@@ -172,7 +172,7 @@ class DirInstalled:
             return []
         if info is None:
             return []
-        primary = info.own[0].mod_id if info.own else None
+        primary = info.own[0].mod_id if info.own else (info.provides[0].mod_id if info.provides else None)
         own_deps = info.own_dependencies if info.own_dependencies is not None else info.dependencies
         return [InstalledMod(m.mod_id, m.version, path.name,
                              tuple(own_deps) if m.mod_id == primary else (), primary, m not in info.own,
