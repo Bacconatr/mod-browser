@@ -98,6 +98,30 @@ class FetchTest(unittest.TestCase):
         time.sleep(0.1)
         self.assertLess(sum(sent), 20_000, f"kept sending: {sum(sent)} bytes")
 
+    def test_cobblemon_sized_download_spools_to_disk_with_the_default_cap(self):
+        # Cobblemon 1.8.4 NeoForge is 141,635,727 bytes (live 2026-11-16).
+        length = 141_635_727
+        class Cobblemon(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Length", str(length))
+                self.end_headers()
+                try:
+                    chunk = b"x" * 65536
+                    remaining = length
+                    while remaining:
+                        piece = chunk[:min(remaining, len(chunk))]
+                        self.wfile.write(piece)
+                        remaining -= len(piece)
+                except OSError:
+                    pass
+            log_message = lambda *a: None
+        fetch = FetchHttp(hosts=("127.0.0.1",), schemes=("http",))
+        with fetch.fetch_jar(self.serve(Cobblemon)) as body:
+            self.assertTrue(body._rolled)
+            body.seek(0, 2)
+            self.assertEqual(body.tell(), length)
+
     def test_refuses_a_declared_length_over_the_cap_without_reading(self):
         class H(BaseHTTPRequestHandler):
             def do_GET(self):

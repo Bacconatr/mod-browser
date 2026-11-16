@@ -30,7 +30,8 @@ ALLOWED_HOSTS = (
     "mediafilez.forgecdn.net",
 )
 MAX_JSON = 4 * 1024 * 1024
-MAX_JAR = 100 * 1024 * 1024
+# Cobblemon 1.8.4 is 135 MiB; bodies still spool to disk after 1 MiB.
+MAX_JAR = 256 * 1024 * 1024
 MAX_REDIRECTS = 3
 USER_AGENT = "mod-browser/0.2"
 

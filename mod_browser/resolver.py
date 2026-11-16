@@ -123,7 +123,7 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
             meta = tomllib.loads(path.read_text())
             pack_entries.setdefault(meta.get("filename"), []).append(meta)
     installed_list: list[InstalledMod] = installed_port.mods()
-    installed = {m.mod_id: m for m in installed_list}
+    installed = {m.mod_id: m for m in sorted(installed_list, key=lambda m: not m.bundled)}
     already = installed.get(jar.own[0].mod_id)
     if already:
         return Verdict("already-installed", head, version, project.side,
@@ -212,6 +212,17 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
                 return [], [Problem("incompatible", f"No bundled artifact version satisfies every range for {':'.join(identity)}.")]
             usable.sort(key=cmp_to_key(lambda a, b: compare_versions(b[0].artifact_version, a[0].artifact_version)))
             selected_bundles.append(usable[0])
+        # JarSelector strips selected embedded jars whose complete mod-id identity
+        # is already a top-level source. The source version wins, even when older.
+        # https://github.com/neoforged/JarJar/blob/main/selector/src/main/java/net/neoforged/jarjar/selection/JarSelector.java
+        source_ids = {}
+        for m in remaining:
+            if not m.bundled:
+                source_ids.setdefault(m.file, []).append(m.mod_id)
+        top_identities = {"".join(ids) for ids in source_ids.values()}
+        top_identities.update("".join(m.mod_id for m in info.own) for _, _, info, _ in members)
+        selected_bundles = [(b, label, parent) for b, label, parent in selected_bundles
+                            if not b.provides or "".join(m.mod_id for m in b.provides) not in top_identities]
         providers = [(m.mod_id, m.version, m.file) for m in remaining if not m.bundled]
         providers.extend((m.mod_id, m.version, p.name) for p, _, info, _ in members for m in info.own)
         providers.extend((m.mod_id, m.version, label) for b, label, _ in selected_bundles for m in b.provides)
