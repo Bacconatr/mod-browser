@@ -135,9 +135,10 @@ class GitPackRepo:
         self.work.mkdir(parents=True, exist_ok=True)
         self.discard(Staged(batch, branch, path))
         self._git("worktree", "add", "-q", "-b", branch, str(path), "HEAD")
+        written: dict[Path, str] = {}  # metafile -> the text a request of this batch wrote into it
         try:
             for request in requests:
-                changed = self._write(path, request.added)
+                changed = self._write(path, request.added, written)
                 self._refresh(path)
                 self._git("add", "-A", cwd=path)
                 names = ", ".join(a["name"] for a in request.added)
@@ -145,20 +146,25 @@ class GitPackRepo:
                 body = f"{verb} {request.mod_name}\n\nRequested-by: {request.requester}\nRequest: {request.id}\nWith: {names}\n"
                 if not changed:
                     raise StageError(f"request {request.id} changed nothing")
-                self._git("commit", "-q", "-m", body, cwd=path)
+                if not self._git("status", "--porcelain", cwd=path).strip():
+                    body += "Already-in: an earlier request of this batch added all of it\n"
+                self._git("commit", "-q", "--allow-empty", "-m", body, cwd=path)
         except Exception:
             self.discard(Staged(batch, branch, path))
             raise
         return Staged(batch, branch, path)
 
-    def _write(self, tree: Path, added: list[dict[str, Any]]) -> bool:
+    def _write(self, tree: Path, added: list[dict[str, Any]], written: dict[Path, str] | None = None) -> bool:
         """Apply a request's entries to the tree. An entry is `add` (the default), or, for an upstream
         update, `change` or `remove` of the metafile it names.
 
         A project is known by its ids, never by its file name (#1789): an `add` of a project the pack
         already tracks, in any folder, is refused; a `change` or `remove` aimed at a metafile of a
         different project (a translation pack named like the mod it translates) is refused; and a new
-        metafile never takes a name another project's metafile has.
+        metafile never takes a name another project's metafile has. The one exception: an `add` an
+        earlier request of the same batch already wrote, file for file, is that request's work, not a
+        second copy, so it is skipped and still counts as this request done (2026-11-16, batch 3:
+        Starcatcher, asked for, then needed by Starcatcher's Delight, failed the batch).
 
         Removals go first, so a project coming back takes the name its metafile had (Boatload's
         mods/boatload.pw.toml, once the translation written over it is removed)."""
@@ -187,6 +193,10 @@ class GitPackRepo:
             if op != "add":
                 raise StageError(f"unknown operation {op!r} for {mod['name']}")
             known = next((existing[k] for k in sorted(op_identity(mod)) if k in existing), None)
+            text = metafile_text(mod)
+            if known is not None and written is not None and written.get(known) == text == known.read_text():
+                wrote = True  # already done by this batch: nothing to write, nothing missing
+                continue
             if known is not None and not mod.get("replaces"):
                 raise StageError(f"{mod['name']} is already tracked by the pack as {known.relative_to(tree).as_posix()}.")
             if known is None and mod.get("replaces"):
@@ -204,7 +214,9 @@ class GitPackRepo:
                 taken.add(name)
                 target = tree / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(metafile_text(mod))
+            target.write_text(text)
+            if written is not None:
+                written[target] = text
             for key in op_identity(mod):
                 existing.setdefault(key, target)
             wrote = True
