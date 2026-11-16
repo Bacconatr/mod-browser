@@ -443,6 +443,98 @@ class DependencyUpgradeTest(BrowseCase):
         self.assertEqual(r["status"], "refused")
         self.assertTrue(any(p["kind"] == "incompatible" for p in r["problems"]), r)
 
+    def test_bundled_dependencies_have_their_own_required_dependencies_resolved(self):
+        graph = {"ROOT0001": self.project("ROOT0001", "Root", "root", [("1", "1")]),
+                 "HELP0001": self.project("HELP0001", "Helper", "helper", [("2", "2")])}
+        root_url = next(iter(graph["ROOT0001"]["jars"]))
+        nested = build_jar(mods_toml("bundled", "1", [{"modId": "helper", "range": "[2,)"}]))
+        graph["ROOT0001"]["jars"][root_url] = build_jar(mods_toml("root", "1"), nested={"bundled.jar": nested})
+        self.graph(graph)
+        r = self.verdict()
+        self.assertEqual(r["status"], "ok", r["problems"])
+        self.assertEqual([a["projectId"] for a in r["added"]], ["ROOT0001", "HELP0001"])
+
+    def test_an_upgrade_preserves_constraints_declared_by_installed_bundled_mods(self):
+        graph = {"ROOT0001": self.project("ROOT0001", "Root", "root", [("1", "1")], [{"modId": "helper", "range": "[2,)"}]),
+                 "HELP0001": self.project("HELP0001", "Helper", "helper", [("2", "2")])}
+        nested = build_jar(mods_toml("bundled", "1", [{"modId": "helper", "range": "[1,2)"}]))
+        old = build_jar(mods_toml("othermod", "1"), nested={"bundled.jar": nested})
+        self.graph(graph, [("othermod.jar", old), ("helper-old.jar", build_jar(mods_toml("helper", "1")))])
+        r = self.verdict()
+        self.assertEqual(r["status"], "refused")
+        self.assertTrue(any("othermod.jar" in p["message"] for p in r["problems"]), r)
+
+    def bundle(self, owner, version="1", required="[1,3)", artifact="shared", dependency_range="*", nested_deps=()):
+        return build_jar(mods_toml(owner, "1", [{"modId": "shared", "range": dependency_range}]),
+                         nested={"shared.jar": build_jar(mods_toml("shared", version, list(nested_deps)))},
+                         jarjar={"jars": [{"path": "META-INF/jars/shared.jar",
+                                          "identifier": {"group": "example", "artifact": artifact},
+                                          "version": {"artifactVersion": version, "range": required}}]})
+
+    def shared_bundles(self, installed, requested):
+        graph = {"ROOT0001": self.project("ROOT0001", "Root", "root", [("1", "1")])}
+        graph["ROOT0001"]["jars"] = {url: requested for url in graph["ROOT0001"]["jars"]}
+        self.graph(graph, [("other.jar", installed)])
+        return self.verdict()
+
+    def test_identical_shared_bundles_are_allowed(self):
+        r = self.shared_bundles(self.bundle("other"), self.bundle("root"))
+        self.assertEqual(r["status"], "ok", r)
+        self.assertEqual(len(r["added"]), 1)
+
+    def test_shared_bundle_selects_version_satisfying_every_artifact_range(self):
+        r = self.shared_bundles(self.bundle("other", "1", "[1,2)"),
+                                self.bundle("root", "2", "[1,3)", dependency_range="[1,2)"))
+        self.assertEqual(r["status"], "ok", r)
+
+    def test_dependencies_of_a_discarded_bundle_are_not_required(self):
+        r = self.shared_bundles(self.bundle("other", "1", "[1,2)"),
+                                self.bundle("root", "2", nested_deps=[{"modId": "unavailable"}]))
+        self.assertEqual(r["status"], "ok", r)
+
+    def test_dependencies_of_the_selected_bundle_are_required(self):
+        r = self.shared_bundles(self.bundle("other", "1"),
+                                self.bundle("root", "2", nested_deps=[{"modId": "unavailable"}]))
+        self.assertEqual(r["status"], "refused", r)
+        self.assertTrue(any("unavailable" in p["message"] for p in r["problems"]), r)
+
+    def test_disjoint_bundle_ranges_are_refused(self):
+        r = self.shared_bundles(self.bundle("other", "1", "[1,2)"), self.bundle("root", "2", "[2,3)"))
+        self.assertEqual(r["status"], "refused", r)
+
+    def test_different_artifacts_providing_the_same_mod_are_refused(self):
+        r = self.shared_bundles(self.bundle("other"), self.bundle("root", artifact="impostor"))
+        self.assertEqual(r["status"], "refused", r)
+
+    def test_standalone_and_bundled_duplicate_are_refused(self):
+        r = self.shared_bundles(build_jar(mods_toml("shared", "1")), self.bundle("root"))
+        self.assertEqual(r["status"], "refused", r)
+
+    def test_selected_bundle_version_must_satisfy_installed_mod_dependencies(self):
+        r = self.shared_bundles(self.bundle("other", "1", dependency_range="[1,2)"), self.bundle("root", "2"))
+        self.assertEqual(r["status"], "refused", r)
+
+    def test_identical_bundled_library_can_be_shared_with_an_installed_jar(self):
+        graph = {"ROOT0001": self.project("ROOT0001", "Root", "root", [("1", "1")])}
+        library = build_jar(mods_toml("sharedlib", "1"))
+        root_url = next(iter(graph["ROOT0001"]["jars"]))
+        graph["ROOT0001"]["jars"][root_url] = build_jar(mods_toml("root", "1"), nested={"shared.jar": library})
+        installed = build_jar(mods_toml("existing", "1"), nested={"shared.jar": library})
+        self.graph(graph, [("existing.jar", installed)])
+        r = self.verdict()
+        self.assertEqual(r["status"], "ok", r["problems"])
+
+    def test_identical_bundled_library_can_be_shared_by_new_dependencies(self):
+        graph = self.shared_graph("*")
+        library = build_jar(mods_toml("sharedlib", "1"))
+        for pid, mid in (("HELP0001", "helper"), ("CHILD001", "child")):
+            for url in graph[pid]["jars"]:
+                graph[pid]["jars"][url] = build_jar(mods_toml(mid, "1"), nested={"shared.jar": library})
+        self.graph(graph)
+        r = self.verdict()
+        self.assertEqual(r["status"], "ok", r["problems"])
+        self.assertEqual(len(r["added"]), 3)
+
     def test_cycles_resolve_once_per_jar(self):
         graph = self.shared_graph("*")
         graph["CHILD001"] = self.project("CHILD001", "Child", "child", [("1", "1")], [{"modId": "root"}])

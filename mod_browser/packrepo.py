@@ -108,6 +108,21 @@ def metafile_text(mod: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def sides(side: str) -> set[str]:
+    return {"client", "server"} if side.lower() == "both" else {side.lower()}
+
+
+def pack_sides(tree: Path) -> dict[str, set[str]]:
+    """Intersect duplicate filename restrictions; ambiguity must never widen availability."""
+    found = {}
+    for path in metafiles(tree):
+        data = tomllib.loads(path.read_text())
+        filename = data.get("filename")
+        available = sides(data.get("side", "both"))
+        found[filename] = found.get(filename, available) & available
+    return found
+
+
 class GitPackRepo:
     def __init__(self, root: Path, work: Path):
         self.root, self.work = root, work
@@ -204,6 +219,12 @@ class GitPackRepo:
                 previous = tomllib.loads(known.read_text())
                 # Keep the pack owner's side restriction when upgrading a dependency.
                 mod = {**mod, "side": previous.get("side", mod.get("side", "both"))}
+            if mod.get("replaces") and "requiredSides" not in mod:
+                raise StageError(f"{mod['name']}: dependency upgrade has no required side evidence; requeue it first.")
+            required = set(mod.get("requiredSides", []))
+            if not required <= sides(mod.get("side", "both")):
+                raise StageError(f"{mod['name']}: pack side restriction excludes required side {', '.join(sorted(required))}; "
+                                 "the owner must change that restriction explicitly.")
             text = metafile_text(mod)
             if known is not None and written is not None and written.get(known) == text == known.read_text():
                 wrote = True  # already done by this batch: nothing to write, nothing missing

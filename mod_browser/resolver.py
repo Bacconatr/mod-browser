@@ -19,7 +19,8 @@ from typing import Any
 
 from .catalog import InstalledMod, Project, Version, default_version, norm
 from .jar import JarInfo
-from .versions import compare_versions, satisfies
+from .packrepo import pack_sides, sides
+from .versions import compare_versions, parse_range, satisfies
 
 #: Provided by the game or the loader, never a download.
 BUILT_IN = frozenset({"minecraft", "neoforge", "forge", "javafml", "lowcodefml", "mclanguage", "fml"})
@@ -57,6 +58,7 @@ class AddedMod:
     hash_format: str | None = None
     side: str = "both"
     replaces_file: str | None = None
+    required_sides: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -88,7 +90,7 @@ def _added(name: str, v: Version, reason: str, side: str = "both") -> AddedMod:
 
 
 def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_id: str,
-            version_id: str | None) -> Verdict:
+            version_id: str | None, pack_root=None) -> Verdict:
     project = catalog.project(source, project_id)
     versions = catalog.versions(source, project_id)
     head = {"source": source, "id": project_id, "name": project.name}
@@ -113,6 +115,7 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
         return Verdict("refused", head, version, project.side,
                        problems=[Problem("unreadable", f"{project.name}'s jar has no NeoForge mod metadata, so it cannot be checked.")])
 
+    restrictions = pack_sides(pack_root) if pack_root is not None else {}
     installed_list: list[InstalledMod] = installed_port.mods()
     installed = {m.mod_id: m for m in installed_list}
     already = installed.get(jar.own[0].mod_id)
@@ -170,18 +173,50 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
         replaced_files = {entry.replaces_file for _, _, _, entry in members if entry.replaces_file}
         remaining = [m for m in installed_list if m.file not in replaced_files]
         removed_ids = {m.mod_id for m in installed_list if m.file in replaced_files}
-        for p, _, info, _ in members:
+        # JarJar selects one bundled artifact by coordinates and the intersection
+        # of every embedding jar's supported ranges, before mod-id validation.
+        # https://docs.neoforged.net/toolchain/docs/plugins/mdg/#jar-in-jar
+        bundles = [(b, p.name, v) for p, v, info, _ in members for b in info.bundles]
+        bundles.extend((b, m.file, chosen) for m in remaining for b in m.bundles)
+        groups = {}
+        selected_bundles = []
+        for b, label, parent in bundles:
+            if b.identity is None:
+                selected_bundles.append((b, label, parent))
+            else:
+                groups.setdefault(b.identity, []).append((b, label, parent))
+        for identity, offers in groups.items():
+            usable = [offer for offer in offers if offer[0].artifact_version and
+                      all(b.version_range and parse_range(b.version_range) is not None and
+                          satisfies(offer[0].artifact_version,
+                                    b.version_range if b.version_range.startswith(("[", "(")) else "*")
+                          for b, _, _ in offers)]
+            if not usable:
+                return [], [Problem("incompatible", f"No bundled artifact version satisfies every range for {':'.join(identity)}.")]
+            usable.sort(key=cmp_to_key(lambda a, b: compare_versions(b[0].artifact_version, a[0].artifact_version)))
+            selected_bundles.append(usable[0])
+        providers = [(m.mod_id, m.version, m.file) for m in remaining if not m.bundled]
+        providers.extend((m.mod_id, m.version, p.name) for p, _, info, _ in members for m in info.own)
+        providers.extend((m.mod_id, m.version, label) for b, label, _ in selected_bundles for m in b.provides)
+        effective = {}
+        for mod_id, version_, label in providers:
+            if mod_id in effective:
+                return [], [Problem("incompatible", f"More than one jar provides {mod_id}.")]
+            effective[mod_id] = (version_, label)
+        for _, _, info, _ in members:
             for m in info.provides:
-                if m.mod_id in planned:
-                    return [], [Problem("incompatible", f"More than one candidate provides {m.mod_id}.")]
-                planned[m.mod_id] = (m.version, p.name)
-        effective = {m.mod_id: (m.version, m.file) for m in remaining}
-        duplicates = effective.keys() & planned.keys()
-        if duplicates:
-            return [], [Problem("incompatible", f"The pack already provides {sorted(duplicates)[0]} in another jar.")]
-        effective.update(planned)
-        checks = [(p.name, v, info.dependencies, False) for p, v, info, _ in members]
+                if m.mod_id in effective:
+                    planned[m.mod_id] = effective[m.mod_id]
+        member_sides = {entry.file_name: restrictions.get(entry.replaces_file, sides(entry.side))
+                        for _, _, _, entry in members}
+        provider_sides = {m.mod_id: restrictions.get(m.file, sides("both")) for m in remaining}
+        provider_sides.update({m.mod_id: member_sides[entry.file_name]
+                               for _, _, info, entry in members for m in info.provides})
+        requirements = {}
+        checks = [(p.name, v, info.own_dependencies if info.own_dependencies is not None else info.dependencies, False) for p, v, info, _ in members]
         checks.extend((m.file, chosen, m.dependencies, True) for m in remaining)
+        checks.extend((label, parent, b.dependencies, label not in {p.name for p, _, _, _ in members})
+                      for b, label, parent in selected_bundles)
         missing = None
         incompatibilities = []
         for label, parent, dependencies, is_installed in checks:
@@ -199,6 +234,15 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
                     continue
                 if is_installed and dep.mod_id not in planned and dep.mod_id not in removed_ids:
                     continue
+                parent_sides = (restrictions.get(label, sides("both")) if is_installed else
+                                next(member_sides[e.file_name] for p, _, _, e in members if p.name == label))
+                needed = parent_sides & sides(dep.side)
+                if not needed:
+                    continue
+                requirements.setdefault(dep.mod_id, set()).update(needed)
+                if have and not needed <= provider_sides.get(dep.mod_id, sides("both")):
+                    return [], [Problem("incompatible", f"{label} needs {dep.mod_id} on side {', '.join(sorted(needed))}, "
+                                        "but its pack side restriction excludes it; the owner must change that restriction explicitly.")]
                 if have and satisfies(have[0], dep.version_range):
                     continue
                 if dep.mod_id in planned:
@@ -220,6 +264,8 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
                     has = f" ({have[0]})" if have[0] else ""
                     msg = f"{label} declares itself incompatible with {dep.mod_id}{rng}, which the pack has{has}."
                 return [], [Problem("incompatible", msg)]
+            for _, _, info, entry in members:
+                entry.required_sides = sorted(set().union(*(requirements.get(m.mod_id, set()) for m in info.provides)))
             return [entry for _, _, _, entry in members], []
         label, parent, dep = missing
         if len(members) >= MAX_ADDED:

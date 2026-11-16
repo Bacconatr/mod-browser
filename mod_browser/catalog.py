@@ -62,6 +62,8 @@ class InstalledMod:
     file: str
     dependencies: tuple[Any, ...] = field(default_factory=tuple)
     primary_id: str | None = None
+    bundled: bool = False
+    bundles: tuple[Any, ...] = field(default_factory=tuple)
 
 
 def norm(text: str) -> str:

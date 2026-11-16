@@ -425,11 +425,11 @@ class FailureTest(MaintenanceCase):
         self.assertEqual(self.runner.tick(), "test-failed")
         self.assertNotIn("download", self.host.calls)
 
-    def queue_dependency_upgrade(self):
+    def queue_dependency_upgrade(self, side="both", approve=True):
         # SYNTHETIC dependency on Connected, installed via CurseForge but found on Modrinth.
         pack = self.dir / "pack"
         target = pack / "mods/create-connected.pw.toml"
-        original = target.read_text().replace("1.3.3", "1.3.2").replace('side = "both"', 'side = "server"')
+        original = target.read_text().replace("1.3.3", "1.3.2").replace('side = "both"', f'side = "{side}"')
         add_mod(pack, "mods/create-connected.pw.toml", original, "Install older Connected", "2026-11-15T10:00:00-05:00")
         (self.mods / "create_connected-1.3.2-mc1.21.1.jar").write_bytes(
             build_jar(mods_toml("create_connected", "1.3.2-mc1.21.1")))
@@ -438,7 +438,8 @@ class FailureTest(MaintenanceCase):
         code, answer, _ = self.ask(ids=PONDER)
         self.assertEqual(code, 201, answer)
         rid = answer["request"]["id"]
-        self.assertEqual(self.act(rid, "approve")[1]["request"]["state"], "queued")
+        if approve:
+            self.assertEqual(self.act(rid, "approve")[1]["request"]["state"], "queued")
         upgrade = next(a for a in self.queue.get(rid).added if a["projectId"] == CONNECTED[0])
         self.assertEqual(upgrade["replaces"], "1.3.2-mc1.21.1")
         self.assertEqual(upgrade["replacesFile"], "create_connected-1.3.2-mc1.21.1.jar")
@@ -450,10 +451,62 @@ class FailureTest(MaintenanceCase):
         self.assertEqual(self.runner.tick(), "applied")
         meta = tomllib.loads(target.read_text())
         self.assertEqual(meta["filename"], "create_connected-1.3.3-mc1.21.1.jar")
-        self.assertEqual(meta["side"], "server")
+        self.assertEqual(meta["side"], "both")
         self.assertEqual(meta["update"]["modrinth"]["version"], CONNECTED[1])
         self.assertEqual(self.state_of(rid), "applied")
         self.assertEqual(len(list(target.parent.glob("create-connected*.pw.toml"))), 1)
+
+    def test_client_dependency_upgrade_refuses_server_only_pack_restriction(self):
+        # Client-only Ponder requires Connected on BOTH; the pack excludes clients.
+        pack = self.dir / "pack"
+        target = pack / "mods/create-connected.pw.toml"
+        add_mod(pack, "mods/create-connected.pw.toml",
+                target.read_text().replace("1.3.3", "1.3.2").replace('side = "both"', 'side = "server"'),
+                "Restrict dependency", "2026-11-15T10:00:00-05:00")
+        (self.mods / "create_connected-1.3.2-mc1.21.1.jar").write_bytes(build_jar(mods_toml("create_connected", "1.3.2")))
+        self.http.jars[modrinth_url(*PONDER)] = build_jar(mods_toml("ponderforkc", "1", [
+            {"modId": "create_connected", "range": "[1.3.3-mc1.21.1,)"}]))
+        code, answer, _ = self.ask(ids=PONDER)
+        self.assertEqual(code, 422, answer)
+        self.assertIn("side", answer["error"].lower())
+
+    def test_client_dependency_upgrade_preserves_compatible_client_restriction(self):
+        rid, target = self.queue_dependency_upgrade(side="client")
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "applied")
+        self.assertEqual(tomllib.loads(target.read_text())["side"], "client")
+        self.assertEqual(self.state_of(rid), "applied")
+
+    def test_approval_rechecks_dependency_side_restrictions(self):
+        rid, target = self.queue_dependency_upgrade(approve=False)
+        add_mod(self.dir / "pack", "mods/create-connected.pw.toml",
+                target.read_text().replace('side = "both"', 'side = "server"'),
+                "Restrict before reapproval", "2026-11-15T11:00:00-05:00")
+        response = self.act(rid, "approve")[1]["request"]
+        self.assertEqual(response["state"], "approved")
+        self.assertIn("side", response["note"].lower())
+
+    def test_upgrade_snapshot_without_side_evidence_is_refused_before_download(self):
+        rid, _ = self.queue_dependency_upgrade()
+        added = self.queue.get(rid).added
+        for entry in added:
+            entry.pop("requiredSides", None)
+        self.queue._db.execute("UPDATE requests SET added = ? WHERE id = ?", (json.dumps(added), rid))
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "test-failed")
+        self.assertNotIn("download", self.host.calls)
+        self.assertIn("requeue", self.queue.get(rid).reason)
+
+    def test_dependency_side_changed_after_queue_fails_before_download(self):
+        rid, target = self.queue_dependency_upgrade()
+        add_mod(self.dir / "pack", "mods/create-connected.pw.toml",
+                target.read_text().replace('side = "both"', 'side = "server"'),
+                "Restrict after approval", "2026-11-15T11:00:00-05:00")
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "test-failed")
+        self.assertNotIn("download", self.host.calls)
+        self.assertIn("side", self.queue.get(rid).reason.lower())
+        self.assertEqual(tomllib.loads(target.read_text())["side"], "server")
 
     def test_dependency_upgrade_refuses_an_ambiguous_installed_filename(self):
         rid, target = self.queue_dependency_upgrade()
