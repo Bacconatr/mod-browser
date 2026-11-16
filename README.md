@@ -207,8 +207,13 @@ every entry not marked `side = "server"` by its `[update.curseforge]` project
 and file id (a Modrinth-fetched mod keeps its CurseForge twin's ids), with the
 index's non-metafile files under `overrides/`. The CurseForge app downloads
 even the mods whose authors block other launchers, so nothing is fetched by
-hand. It is offered only while every player-side entry has CurseForge ids;
-otherwise it is a 404 and `/api/setup`'s `curseforge.missing` names the rest.
+hand. Pinned Modrinth-only mod jars are downloaded with the existing bounded HTTPS
+adapter and verified against the pack hash. A CurseForge fingerprint match is
+accepted only with the same SHA-1; otherwise a small jar is included under the
+standard `overrides/mods` folder (16 MiB total). Only one export builds at a
+time, and a failed checksum, download or size limit returns no partial ZIP.
+Unmapped non-mod files still leave the import unavailable; `/api/setup`'s
+`curseforge.missing` names them.
 It does not update itself: after a pack change a friend imports it again.
 
 ## Setting up the game: the Prism instance (`/setup`)

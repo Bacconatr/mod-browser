@@ -190,6 +190,8 @@ class Setup:
     max_mb: int = 6144
     #: CurseForge file ids -> the ones it hands out no URL for (CurseForgeCatalog.blocked_files).
     blocked_files: Callable[[list[str]], set[str]] | None = None
+    export_http: Any = None
+    export_match: Callable[[int, str], dict[str, int] | None] | None = None
 
 
 @dataclass
@@ -254,6 +256,7 @@ class App:
         self.setup = setup
         self._zip: tuple[Any, bytes] | None = None
         self._cf_zip: tuple[str, bytes] | None = None
+        self._cf_export_lock = threading.Lock()
         self.monitor, self.catalog, self.name, self.browse = monitor, catalog, name, browse
         if browse is not None:
             browse.pack_root = catalog.root
@@ -565,13 +568,13 @@ class App:
         player = [m for m in data["mods"] if m["side"] != "server"]
         blocked = self._blocked_files(pack["commit"], [m["curseforgeFile"] for m in player if m.get("curseforgeFile")])
         have_jar = self.setup.bootstrap_jar is not None and self.setup.bootstrap_jar.is_file()
-        cf_missing = cfpack.missing(data["mods"])
+        cf_missing = cfpack.missing(data["mods"], direct=self.setup.export_http is not None)
         return _json({
             "address": self.monitor.address,
             "packUrl": self.setup.pack_url,
             "minecraft": pack["minecraft"], "neoforge": pack["neoforge"],
             "instance": {"available": have_jar, "url": "/prism/instance.zip", "memoryMb": self.setup.max_mb},
-            # The CurseForge-app import: offered only while every player-side entry has CurseForge ids.
+            # Every player-side entry needs CurseForge ids or a pinned direct mod source.
             "curseforge": {"available": not cf_missing, "url": "/curseforge/pack.zip",
                            "missing": [m["name"] for m in cf_missing]},
             "manual": [{"name": m["name"], "filename": m["filename"], "url": m["source"]["url"]}
@@ -632,14 +635,31 @@ class App:
             "Content-Disposition": f'attachment; filename="{filename}.zip"', "Cache-Control": "no-cache"}
 
     def curseforge_zip(self, req: Req) -> Response:
+        if not self._cf_export_lock.acquire(blocking=False):
+            return _error(HTTPStatus.SERVICE_UNAVAILABLE, "the client import is being prepared; try again shortly")
+        try:
+            return self._curseforge_zip(req)
+        finally:
+            self._cf_export_lock.release()
+
+    def _curseforge_zip(self, req: Req) -> Response:
         data = self.catalog.catalog()
-        if cfpack.missing(data["mods"]):
+        if cfpack.missing(data["mods"], direct=self.setup.export_http is not None):
             return _error(HTTPStatus.NOT_FOUND, "the CurseForge import is not available: some mods are not on CurseForge")
         commit = data["pack"]["commit"]
         if self._cf_zip is None or self._cf_zip[0] != commit:
             pack = tomllib.loads((self.setup.files.root / "pack.toml").read_text())
             version = f"{data['pack'].get('version') or 'pack'} ({commit[:7]})"
-            blob = cfpack.modpack_zip(pack, data["mods"], self.setup.files.overrides(), name=self.name, version=version)
+            mods, overrides = data["mods"], self.setup.files.overrides()
+            if self.setup.export_http is not None:
+                try:
+                    mods, direct = cfpack.prepare(mods, self.setup.export_http, self.setup.export_match)
+                    if overrides.keys() & direct.keys():
+                        raise ValueError("a mod override collides with an indexed pack file")
+                    overrides.update(direct)
+                except Exception:
+                    return _error(HTTPStatus.BAD_GATEWAY, "the client import could not be verified; try again shortly")
+            blob = cfpack.modpack_zip(pack, mods, overrides, name=self.name, version=version)
             self._cf_zip = (commit, blob)
         filename = (re.sub(r"[^A-Za-z0-9]+", "-", self.name).strip("-") or "pack") + "-CurseForge"
         return 200, "application/zip", self._cf_zip[1], {

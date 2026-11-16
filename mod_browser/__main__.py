@@ -83,7 +83,8 @@ def setup_from_env(pack_dir: Path, http: CachingHttp) -> Setup:
     curseforge = curseforge_from_env(http)
     return Setup(files=PackFiles(pack_dir), pack_url=f"{public}/pack/pack.toml", bootstrap_jar=Path(jar),
                  min_mb=int(env("PRISM_MIN_MB", "2048")), max_mb=int(env("PRISM_MAX_MB", "6144")),
-                 blocked_files=curseforge.blocked_files if curseforge else None)
+                 blocked_files=curseforge.blocked_files if curseforge else None,
+                 export_http=http, export_match=curseforge.match_fingerprint if curseforge else None)
 
 
 def applier_from_env(requests: Requests | None) -> ApplyDesk | None:
