@@ -423,6 +423,43 @@ class FailureTest(MaintenanceCase):
         self.assertEqual(self.runner.tick(), "test-failed")
         self.assertNotIn("download", self.host.calls)
 
+    def test_a_mod_one_request_adds_and_another_needs_is_written_once(self):
+        # 2026-11-16, batch 3: Starcatcher was asked for, then Starcatcher's Delight, which needs it. Both
+        # requests carried the same Starcatcher entry, and the second add failed the whole batch.
+        first, second = self.queued(CONNECTED, PONDER)
+        shared = self.queue.get(first).added[0]
+        both = self.queue.get(second).added + [{**shared, "reason": "required by Ponder"}]
+        self.queue._db.execute("UPDATE requests SET added = ? WHERE id = ?", (json.dumps(both), second))
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "applied")
+        self.assertEqual([self.state_of(first), self.state_of(second)], ["applied", "applied"])
+        mods = self.host.staged_mods
+        self.assertEqual(len(mods), len(set(mods)))
+        self.assertEqual(sum(tomllib.loads((self.dir / "pack" / "mods" / m).read_text()).get("update", {})
+                             .get("modrinth", {}).get("mod-id") == shared["projectId"] for m in mods), 1)
+
+    def test_a_mod_asked_for_after_another_request_brought_it_in_is_applied_too(self):
+        # The other order: the dependent mod first, then the dependency on its own.
+        first, second = self.queued(CONNECTED, PONDER)
+        shared = self.queue.get(second).added[0]
+        both = self.queue.get(first).added + [{**shared, "reason": "required by Create: Connected"}]
+        self.queue._db.execute("UPDATE requests SET added = ? WHERE id = ?", (json.dumps(both), first))
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "applied")
+        self.assertEqual([self.state_of(first), self.state_of(second)], ["applied", "applied"])
+        self.assertIn(f"Request: {second}", self.git("log", "--format=%B", "-n", "20"))
+
+    def test_two_requests_that_need_different_versions_of_one_mod_still_fail_before_the_download(self):
+        first, second = self.queued(CONNECTED, PONDER)
+        shared = self.queue.get(first).added[0]
+        other = {**shared, "versionId": "other", "fileHash": "0" * 40, "reason": "required by Ponder"}
+        both = self.queue.get(second).added + [other]
+        self.queue._db.execute("UPDATE requests SET added = ? WHERE id = ?", (json.dumps(both), second))
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "test-failed")
+        self.assertNotIn("download", self.host.calls)
+        self.assertIn("already tracked", self.queue.get(second).reason)
+
     def test_an_outcome_the_app_did_not_hear_is_reported_first_next_time(self):
         (rid,) = self.queued(CONNECTED)
         self.owner_asks()
