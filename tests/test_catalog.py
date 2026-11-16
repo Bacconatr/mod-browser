@@ -434,14 +434,14 @@ class DependencyUpgradeTest(BrowseCase):
         self.assertEqual(r["status"], "ok", r["problems"])
         self.assertEqual([a["replaces"] for a in r["added"]], [None, "1"])
 
-    def test_a_separate_dependency_cannot_replace_the_jar_that_bundles_it(self):
+    def test_a_standalone_dependency_shadows_the_bundle_without_replacing_its_parent(self):
         graph = {"ROOT0001": self.project("ROOT0001", "Root", "root", [("1", "1")], [{"modId": "helper", "range": "[2,)"}]),
                  "HELP0001": self.project("HELP0001", "Helper", "helper", [("2", "2")])}
         old = build_jar(mods_toml("othermod", "1"), nested={"helper.jar": build_jar(mods_toml("helper", "1"))})
         self.graph(graph, [("othermod.jar", old)])
         r = self.verdict()
-        self.assertEqual(r["status"], "refused")
-        self.assertTrue(any(p["kind"] == "incompatible" for p in r["problems"]), r)
+        self.assertEqual(r["status"], "ok", r)
+        self.assertEqual([a["replacesFile"] for a in r["added"]], [None, None])
 
     def test_bundled_dependencies_have_their_own_required_dependencies_resolved(self):
         graph = {"ROOT0001": self.project("ROOT0001", "Root", "root", [("1", "1")]),
@@ -506,9 +506,64 @@ class DependencyUpgradeTest(BrowseCase):
         r = self.shared_bundles(self.bundle("other"), self.bundle("root", artifact="impostor"))
         self.assertEqual(r["status"], "refused", r)
 
-    def test_standalone_and_bundled_duplicate_are_refused(self):
+    def test_standalone_mod_takes_precedence_over_a_bundled_copy(self):
         r = self.shared_bundles(build_jar(mods_toml("shared", "1")), self.bundle("root"))
+        self.assertEqual(r["status"], "ok", r)
+
+    def library_wrapper(self):
+        raw = build_jar(mods_toml("wrapper", "1"), nested={"kffmod.jar": build_jar(mods_toml("kotlinforforge", "5.12.0"))})
+        out = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(raw)) as source, zipfile.ZipFile(out, "w") as target:
+            for item in source.infolist():
+                if item.filename not in ("META-INF/neoforge.mods.toml", "META-INF/mods.toml"):
+                    target.writestr(item, source.read(item))
+        return out.getvalue()
+
+    def test_installed_library_wrapper_provides_its_nested_kotlin_mod(self):
+        self.graph({"ROOT0001": self.project("ROOT0001", "Root", "root", [("1", "1")],
+                                           [{"modId": "kotlinforforge", "range": "[5,)"}])},
+                   [("kotlinforforge-all.jar", self.library_wrapper())])
+        result = self.verdict()
+        self.assertEqual(result["status"], "ok", result)
+        self.assertEqual(len(result["added"]), 1)
+
+    def test_library_wrapper_can_be_requested_and_resolved_as_a_dependency(self):
+        graph = {"ROOT0001": self.project("ROOT0001", "Root", "root", [("1", "1")],
+                                          [{"modId": "kotlinforforge", "range": "[5,)"}]),
+                 "KFF00001": self.project("KFF00001", "KotlinForForge", "kotlinforforge", [("5.12.0", "5.12.0")])}
+        url = next(iter(graph["KFF00001"]["jars"]))
+        graph["KFF00001"]["jars"][url] = self.library_wrapper()
+        self.graph(graph)
+        result = self.verdict()
+        self.assertEqual(result["status"], "ok", result)
+        self.assertEqual([a["projectId"] for a in result["added"]], ["ROOT0001", "KFF00001"])
+        self.assertEqual(self.get("/api/catalog/resolve?source=modrinth&id=KFF00001")[1]["status"], "ok")
+
+    def test_newer_standalone_with_a_secondary_id_supersedes_an_older_embedded_module(self):
+        top = mods_toml("shared", "2") + '\n[[mods]]\nmodId = "compatibility_id"\nversion = "2"\n'
+        r = self.shared_bundles(build_jar(top), self.bundle("root", "1", nested_deps=[{"modId": "unavailable"}]))
+        self.assertEqual(r["status"], "ok", r)
+
+    def test_secondary_id_collision_between_different_primary_modules_is_refused(self):
+        top = mods_toml("different", "2") + '\n[[mods]]\nmodId = "shared"\nversion = "2"\n'
+        r = self.shared_bundles(build_jar(top), self.bundle("root", "1"))
         self.assertEqual(r["status"], "refused", r)
+
+    def test_two_top_level_jars_providing_the_same_mod_are_still_refused(self):
+        graph = {"ROOT0001": self.project("ROOT0001", "Root", "root", [("1", "1")])}
+        self.graph(graph, [("one.jar", build_jar(mods_toml("shared", "1"))),
+                           ("two.jar", build_jar(mods_toml("shared", "2")))])
+        self.assertEqual(self.verdict()["status"], "refused")
+
+    def test_standalone_version_still_has_to_satisfy_the_requested_dependency(self):
+        r = self.shared_bundles(build_jar(mods_toml("shared", "1")),
+                                self.bundle("root", "2", dependency_range="[2,3)"))
+        self.assertEqual(r["status"], "refused", r)
+
+    def test_dependencies_of_a_bundle_shadowed_by_a_standalone_mod_are_ignored(self):
+        r = self.shared_bundles(build_jar(mods_toml("shared", "1")),
+                                self.bundle("root", nested_deps=[{"modId": "unavailable"}]))
+        self.assertEqual(r["status"], "ok", r)
 
     def test_selected_bundle_version_must_satisfy_installed_mod_dependencies(self):
         r = self.shared_bundles(self.bundle("other", "1", dependency_range="[1,2)"), self.bundle("root", "2"))
@@ -553,6 +608,26 @@ class DependencyUpgradeTest(BrowseCase):
         self.assertEqual(r["status"], "refused")
         self.assertTrue(any("too many" in p["message"] for p in r["problems"]), r)
         self.assertLess(len(self.http.requests), 100)
+
+    def test_exact_name_match_is_tried_before_many_addons_named_after_the_dependency(self):
+        # Measured 2026-11-16: every Cobblemon addon resolved as "Too many
+        # candidate jars", because searching "cobblemon" returns dozens of
+        # addons whose names contain it, and their higher version numbers
+        # sorted ahead of Cobblemon 1.8.4 itself, spending the 50-jar budget.
+        graph = {
+            "ROOT0001": self.project("ROOT0001", "Root Addon", "root", [("1", "1")],
+                                      [{"modId": "cobblemon", "range": "[1.8.0,)"}]),
+            "COBB0001": self.project("COBB0001", "Cobblemon", "cobblemon", [("1.8.4", "1.8.4")]),
+        }
+        for n in range(3):
+            pid = f"ADDN{n:04d}"
+            graph[pid] = self.project(pid, f"Cobblemon Addon {n}", f"addon{n}",
+                                      [(f"{i}.0", f"{i}.0") for i in range(30, 10, -1)])
+        self.graph(graph)
+        r = self.verdict()
+        self.assertEqual(r["status"], "ok", r["problems"])
+        self.assertEqual([a["projectId"] for a in r["added"]], ["ROOT0001", "COBB0001"])
+        self.assertLessEqual(len(self.jar_fetches), 2)
 
     def test_candidate_jar_downloads_are_bounded_even_when_labels_are_misleading(self):
         self.graph({

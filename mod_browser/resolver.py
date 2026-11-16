@@ -112,7 +112,7 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
     if chosen.blocked:
         return Verdict("unavailable", head, version, project.side, problems=[_blocked(project.name)])
     jar = jars.info(chosen)
-    if jar is None or not jar.own:
+    if jar is None or not jar.provides:
         return Verdict("refused", head, version, project.side,
                        problems=[Problem("unreadable", f"{project.name}'s jar has no NeoForge mod metadata, so it cannot be checked.")])
 
@@ -123,8 +123,8 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
             meta = tomllib.loads(path.read_text())
             pack_entries.setdefault(meta.get("filename"), []).append(meta)
     installed_list: list[InstalledMod] = installed_port.mods()
-    installed = {m.mod_id: m for m in installed_list}
-    already = installed.get(jar.own[0].mod_id)
+    installed = {m.mod_id: m for m in sorted(installed_list, key=lambda m: not m.bundled)}
+    already = installed.get((jar.own or jar.provides)[0].mod_id)
     if already:
         return Verdict("already-installed", head, version, project.side,
                        installed_as={"modId": already.mod_id, "version": already.version})
@@ -178,8 +178,12 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
         candidates.sort(key=cmp_to_key(_better))
         # Try name matches before unrelated platform hints, whose jars still
         # may provide the requested id but can otherwise consume the budget.
+        # An exact name comes first: a search for "cobblemon" returns dozens of
+        # addons named after it whose higher version numbers would otherwise
+        # spend the whole jar budget before Cobblemon itself is tried.
         want = norm(mod_id)
-        candidates.sort(key=lambda c: want not in norm(c[0].slug) and want not in norm(c[0].name))
+        candidates.sort(key=lambda c: 0 if want in (norm(c[0].slug), norm(c[0].name))
+                        else 1 if want in norm(c[0].slug) or want in norm(c[0].name) else 2)
         candidates_cache[key] = candidates
         return candidates_cache[key]
 
@@ -212,6 +216,28 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
                 return [], [Problem("incompatible", f"No bundled artifact version satisfies every range for {':'.join(identity)}.")]
             usable.sort(key=cmp_to_key(lambda a, b: compare_versions(b[0].artifact_version, a[0].artifact_version)))
             selected_bundles.append(usable[0])
+        # JarSelector strips selected embedded jars whose complete mod-id identity
+        # is already a top-level source. The source version wins, even when older.
+        # https://github.com/neoforged/JarJar/blob/main/selector/src/main/java/net/neoforged/jarjar/selection/JarSelector.java
+        source_ids = {}
+        for m in remaining:
+            if not m.bundled:
+                source_ids.setdefault(m.file, []).append(m.mod_id)
+        top_identities = {"".join(ids) for ids in source_ids.values()}
+        top_identities.update("".join(m.mod_id for m in info.own) for _, _, info, _ in members)
+        selected_bundles = [(b, label, parent) for b, label, parent in selected_bundles
+                            if not b.provides or "".join(m.mod_id for m in b.provides) not in top_identities]
+        # FML 4's UniqueModListBuilder then groups files by their FIRST mod id
+        # and keeps the newest. Forgified Fabric API added a secondary id, so
+        # its older embedded copy has a different JarJar identity but is dropped
+        # by this second stage. Keep conservative refusal if an embedded copy
+        # would supersede the owner's standalone file.
+        top_versions = {m.mod_id: m.version for m in remaining
+                        if not m.bundled and m.mod_id == m.primary_id}
+        top_versions.update({info.own[0].mod_id: info.own[0].version for _, _, info, _ in members if info.own})
+        selected_bundles = [(b, label, parent) for b, label, parent in selected_bundles
+                            if not b.provides or b.provides[0].mod_id not in top_versions
+                            or compare_versions(top_versions[b.provides[0].mod_id], b.provides[0].version) < 0]
         providers = [(m.mod_id, m.version, m.file) for m in remaining if not m.bundled]
         providers.extend((m.mod_id, m.version, p.name) for p, _, info, _ in members for m in info.own)
         providers.extend((m.mod_id, m.version, label) for b, label, _ in selected_bundles for m in b.provides)
@@ -303,7 +329,7 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
                     return [], [Problem("not-found", "Too many candidate jars to check safely; try a different version.")]
                 jar_cache[key] = jars.info(v)
             info = jar_cache[key]
-            if info is None or not info.own:
+            if info is None or not info.provides:
                 if norm(dep.mod_id) in norm(p.name) or norm(dep.mod_id) in norm(p.slug):
                     unreadable = [Problem("unreadable", f"{p.name}'s jar has no readable NeoForge mod metadata.")]
                 continue
@@ -317,7 +343,7 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
             if attempts > MAX_ATTEMPTS:
                 return [], [Problem("not-found", "Too many dependency combinations to check safely; try a different version.")]
             entry = _added(p.name, v, f"required by {label}", p.side)
-            old = next((installed[m.mod_id] for m in info.own if m.mod_id in installed
+            old = next((installed[m.mod_id] for m in (info.own or info.provides[:1]) if m.mod_id in installed
                         and installed[m.mod_id].primary_id in (None, m.mod_id)), None)
             if old:
                 entry.replaces = old.version

@@ -279,6 +279,68 @@ class CurseForgeImportTest(SetupCase):
         self.assertEqual((cf["available"], cf["missing"]), (False, ["Create Deep Seas [BETA]"]))
         self.assertEqual(self.get("/curseforge/pack.zip")[0], 404)
 
+    def direct_mod(self, payload=b"small jar", match=None):
+        import hashlib
+        from mod_browser import cfpack
+        self.start()
+        meta = (self.pack / "mods/create-deep-seas.pw.toml").read_text()
+        import re
+        meta = re.sub(r'hash = "[^"]*"', 'hash = "' + hashlib.sha512(payload).hexdigest() + '"', meta)
+        add_mod(self.pack, "mods/create-deep-seas.pw.toml", meta, "Pin a direct mod\n", "2026-11-15T09:00:00-05:00")
+        class Http:
+            def fetch_jar(inner, url):
+                return io.BytesIO(payload)
+        self.app.setup.export_http = Http()
+        self.app.setup.export_match = match
+        return cfpack
+
+    def test_direct_mod_is_hash_verified_and_included_in_the_curseforge_override(self):
+        self.direct_mod()
+        self.assertTrue(self.json("/api/setup")["curseforge"]["available"])
+        code, _, body = self.get("/curseforge/pack.zip")
+        self.assertEqual(code, 200, body)
+        zf = zipfile.ZipFile(io.BytesIO(body))
+        self.assertEqual(zf.read("overrides/mods/create_submarine-3.4.5.jar"), b"small jar")
+        self.assertEqual(len(json.loads(zf.read("manifest.json"))["files"]), 2)
+
+    def test_exact_curseforge_twin_is_listed_instead_of_copying_the_direct_jar(self):
+        self.direct_mod(match=lambda fp, sha1: {"project": 1533137, "file": 9290742})
+        code, _, body = self.get("/curseforge/pack.zip")
+        self.assertEqual(code, 200, body)
+        zf = zipfile.ZipFile(io.BytesIO(body))
+        self.assertNotIn("overrides/mods/create_submarine-3.4.5.jar", zf.namelist())
+        self.assertIn({"projectID": 1533137, "fileID": 9290742, "required": True}, json.loads(zf.read("manifest.json"))["files"])
+
+    def test_only_one_client_zip_is_built_at_a_time(self):
+        self.direct_mod()
+        self.app._cf_export_lock.acquire()
+        try:
+            self.assertEqual(self.get("/curseforge/pack.zip")[0], 503)
+        finally:
+            self.app._cf_export_lock.release()
+        self.assertEqual(self.get("/curseforge/pack.zip")[0], 200)
+
+    def test_direct_mod_checksum_failure_never_returns_a_partial_client_zip(self):
+        self.direct_mod()
+        self.app.setup.export_http.fetch_jar = lambda url: io.BytesIO(b"different jar")
+        self.assertEqual(self.get("/curseforge/pack.zip")[0], 502)
+        self.assertIsNone(self.app._cf_zip)
+
+    def test_direct_mod_total_size_limit_never_returns_a_partial_client_zip(self):
+        from unittest.mock import patch
+        self.direct_mod()
+        with patch("mod_browser.cfpack.MAX_OVERRIDES", 4):
+            self.assertEqual(self.get("/curseforge/pack.zip")[0], 502)
+        self.assertIsNone(self.app._cf_zip)
+
+    def test_server_only_direct_mod_is_not_downloaded_for_the_client(self):
+        self.direct_mod()
+        self.app.setup.export_http.fetch_jar = lambda url: (_ for _ in ()).throw(AssertionError("must not fetch"))
+        meta = self.pack / "mods/create-deep-seas.pw.toml"
+        meta.write_text(meta.read_text().replace('side = "both"', 'side = "server"'))
+        _git(self.pack, "commit", "-qam", "Make it server-only", date="2026-11-15T09:01:00-05:00")
+        self.assertEqual(self.get("/curseforge/pack.zip")[0], 200)
+
     def test_the_import_lists_every_player_side_entry_by_curseforge_id_with_the_servers_neoforge(self):
         self.start()
         self.all_on_curseforge()
@@ -314,3 +376,35 @@ class PageScriptTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExportSourceTest(unittest.TestCase):
+    def test_untrusted_urls_unpinned_hashes_and_unsafe_paths_are_not_exportable(self):
+        from mod_browser.cfpack import override_spec
+        import tomllib
+        meta = tomllib.loads(DEEP_SEAS_ON_CURSEFORGE)
+        meta["download"]["hash"] = "a" * 128
+        self.assertIsNotNone(override_spec(meta, "mods/example.pw.toml"))
+        for change in [
+            {"filename": "../escape.jar"},
+            {"download": {**meta["download"], "url": "https://example.com/mod.jar"}},
+            {"download": {**meta["download"], "hash": "bad"}},
+        ]:
+            self.assertIsNone(override_spec({**meta, **change}, "mods/example.pw.toml"))
+        self.assertIsNone(override_spec(meta, "resourcepacks/example.pw.toml"))
+
+    def test_curseforge_fingerprint_matches_known_murmurhash2_values_and_ignores_whitespace(self):
+        from mod_browser.cfpack import fingerprint
+        self.assertEqual(fingerprint(io.BytesIO(b"")), 1540447798)
+        self.assertEqual(fingerprint(io.BytesIO(b"hello")), 2788266382)
+        self.assertEqual(fingerprint(io.BytesIO(b"h e\tl\nl\ro")), fingerprint(io.BytesIO(b"hello")))
+
+    def test_curseforge_fingerprint_match_requires_the_exact_sha1(self):
+        class Http:
+            def post_json(self, *args):
+                return {"data": {"exactMatches": [{"file": {"fileFingerprint": 123, "modId": 1, "id": 2,
+                        "hashes": [{"algo": 1, "value": "verified"}]}}]}}
+        cf = CurseForgeCatalog(Http(), "test-key")
+        self.assertIsNone(cf.match_fingerprint(123, "different"))
+        self.assertIsNone(cf.match_fingerprint(124, "verified"))
+        self.assertEqual(cf.match_fingerprint(123, "verified"), {"project": 1, "file": 2})

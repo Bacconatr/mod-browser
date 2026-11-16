@@ -25,6 +25,8 @@ import tomllib
 from pathlib import Path
 from typing import Any, Callable
 
+from .cfpack import override_spec
+
 _KINDS = {"mods": "mod", "resourcepacks": "resource pack", "shaderpacks": "shader pack"}
 _LOADERS = {"neoforge", "forge", "fabric", "quilt", "mc"}
 _VERSIONISH = re.compile(r"^[vr]?\d+(?:\.\d+)*[a-z]*(?:\+[\w.]+)*$", re.I)
@@ -214,6 +216,7 @@ class PackCatalog:
                 # hands out no URL for (the author blocks outside downloads), so a player is told.
                 "curseforgeFile": _curseforge_file(meta),
                 "curseforge": _curseforge_ids(meta),
+                "exportOverride": override_spec(meta, path),
                 "origin": origin,
                 "addedBy": by,
                 "addedOn": on,

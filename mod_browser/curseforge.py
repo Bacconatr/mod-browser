@@ -62,6 +62,15 @@ class CurseForgeCatalog:
             blocked |= {str(f["id"]) for f in res.get("data") or [] if not f.get("downloadUrl")}
         return blocked
 
+    def match_fingerprint(self, fingerprint: int, sha1: str) -> dict[str, int] | None:
+        response = self.http.post_json(f"{API}/fingerprints/432", {"fingerprints": [fingerprint]}, self._headers)
+        for match in response.get("data", {}).get("exactMatches", []):
+            file = match.get("file", {})
+            if (file.get("fileFingerprint") == fingerprint and file.get("isAvailable") is not False
+                    and any(h.get("algo") == 1 and h.get("value", "").lower() == sha1 for h in file.get("hashes", []))):
+                return {"project": int(file["modId"]), "file": int(file["id"])}
+        return None
+
     def project(self, project_id: str) -> Project:
         res = self.http.json(f"{API}/mods/{quote(project_id, safe='')}", self._headers)
         return to_project(res["data"])
