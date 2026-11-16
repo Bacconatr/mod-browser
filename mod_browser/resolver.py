@@ -165,8 +165,11 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
             except Exception:  # noqa: BLE001 - one unavailable hint does not lose the others
                 continue
         names = [p.name for p in projects.values()]
+        # A project fetched by id wins over its search hit: Modrinth's search
+        # index can lag (Tim Core listed client+server while the project said
+        # server-only), and a side that differs per path writes it twice.
         for p in catalog.find_by_mod_id(mod_id, names):
-            projects[(p.source, p.id)] = p
+            projects.setdefault((p.source, p.id), p)
         candidates = []
         for key_, p in projects.items():
             if key_ not in versions_cache:

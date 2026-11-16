@@ -83,7 +83,7 @@ def mods_toml(mod_id: str, version: str, deps: list[dict] | None = None) -> str:
     lines = ['modLoader = "javafml"', "[[mods]]", f'modId = "{mod_id}"', f'version = "{version}"']
     for d in deps or []:
         lines += [f"[[dependencies.{mod_id}]]", f'modId = "{d["modId"]}"', f'type = "{d.get("type", "required")}"',
-                  f'versionRange = "{d.get("range", "*")}"', 'side = "BOTH"']
+                  f'versionRange = "{d.get("range", "*")}"', f'side = "{d.get("side", "BOTH")}"']
     return "\n".join(lines)
 
 

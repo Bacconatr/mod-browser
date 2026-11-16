@@ -271,7 +271,7 @@ class DependencyUpgradeTest(BrowseCase):
             self.http.requests.append(url)
             if parsed.path == "/v2/search":
                 query = parse_qs(parsed.query)["query"][0].lower().replace("_", "")
-                return {"hits": [p["project"] for p in projects.values()
+                return {"hits": [p.get("search", p["project"]) for p in projects.values()
                                  if query in p["project"]["title"].lower().replace(" ", "")
                                  or query == p["project"]["slug"]]}
             for pid, data in projects.items():
@@ -608,6 +608,23 @@ class DependencyUpgradeTest(BrowseCase):
         self.assertEqual(r["status"], "refused")
         self.assertTrue(any("too many" in p["message"] for p in r["problems"]), r)
         self.assertLess(len(self.http.requests), 100)
+
+    def test_dependency_side_comes_from_the_project_not_a_stale_search_hit(self):
+        # Measured 2026-11-16: Modrinth's search index listed Cobblemon Tim Core
+        # as client+server while its project said server-only. Requested on its
+        # own it was "server"; as Capture XP's dependency "both", so one batch
+        # wrote it twice and failed ("already tracked by the pack").
+        core = self.project("CORE0001", "Tim Core", "timcore", [("1", "1")])
+        core["project"]["client_side"] = "unsupported"
+        core["search"] = {**core["project"], "client_side": "required"}
+        root = self.project("ROOT0001", "Capture XP", "capturexp", [("1", "1")],
+                            [{"modId": "timcore", "side": "SERVER"}], ["CORE0001"])
+        root["project"]["client_side"] = "unsupported"
+        self.graph({"ROOT0001": root, "CORE0001": core})
+        r = self.verdict()
+        self.assertEqual(r["status"], "ok", r["problems"])
+        self.assertEqual([(a["projectId"], a["side"]) for a in r["added"]],
+                         [("ROOT0001", "server"), ("CORE0001", "server")])
 
     def test_exact_name_match_is_tried_before_many_addons_named_after_the_dependency(self):
         # Measured 2026-11-16: every Cobblemon addon resolved as "Too many
