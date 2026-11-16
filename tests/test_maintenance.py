@@ -11,15 +11,24 @@ new `Runner` on the same journal is the next run.
 
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import subprocess
 import tomllib
+import urllib.request
+import zipfile
 
 from mod_browser.applier import ApplyDesk
 from mod_browser.maintenance import AppClient, Journal, Runner
 from mod_browser.packrepo import GitPackRepo, metafile_text
 from mod_browser.ports import BootResult, HostError
+from mod_browser.prism import PackFiles
+from mod_browser.web import Setup
+from tests.test_setup import DEEP_SEAS_ON_CURSEFORGE
 from tests.test_requests import CONNECTED, PONDER, RequestsCase
+from tests.browse_fakes import build_jar, mods_toml, modrinth_url, recorded_json
+from tests.fakes import add_mod
 
 
 class Crash(BaseException):
@@ -422,6 +431,239 @@ class FailureTest(MaintenanceCase):
         self.owner_asks()
         self.assertEqual(self.runner.tick(), "test-failed")
         self.assertNotIn("download", self.host.calls)
+
+    def queue_dependency_upgrade(self, side="both", approve=True, prepare_only=False, mapped=False):
+        # SYNTHETIC dependency on an older Connected jar.
+        pack = self.dir / "pack"
+        target = pack / "mods/create-connected.pw.toml"
+        original = target.read_text().replace("1.3.3", "1.3.2").replace('side = "both"', f'side = "{side}"')
+        if mapped:
+            original = original.replace("file-id = 8777573", "file-id = 8777572")
+        else:
+            original = original.replace('[update.curseforge]\nfile-id = 8777573\nproject-id = 947914',
+                                        '[update.modrinth]\nmod-id = "Vg5TIO6d"\nversion = "old"')
+            original = original.replace('mode = "metadata:curseforge"',
+                                        'url = "https://cdn.modrinth.com/data/Vg5TIO6d/versions/old/old.jar"')
+        add_mod(pack, "mods/create-connected.pw.toml", original, "Install older Connected", "2026-11-15T10:00:00-05:00")
+        (self.mods / "create_connected-1.3.2-mc1.21.1.jar").write_bytes(
+            build_jar(mods_toml("create_connected", "1.3.2-mc1.21.1")))
+        self.http.jars[modrinth_url(*PONDER)] = build_jar(mods_toml("ponderforkc", "1", [
+            {"modId": "create_connected", "range": "[1.3.3-mc1.21.1,)"}]))
+        if side == "server":
+            original_json = self.http.json
+
+            def upstream(url, headers=None):
+                reply = original_json(url, headers)
+                if "/v2/project/" + PONDER[0] in url and "/version" not in url:
+                    return {**reply, "client_side": "unsupported", "server_side": "required"}
+                return reply
+
+            self.http.json = upstream
+        if prepare_only:
+            return target
+        code, answer, _ = self.ask(ids=PONDER)
+        self.assertEqual(code, 201, answer)
+        rid = answer["request"]["id"]
+        if approve:
+            self.assertEqual(self.act(rid, "approve")[1]["request"]["state"], "queued")
+        upgrade = next(a for a in self.queue.get(rid).added if a["projectId"] == CONNECTED[0])
+        self.assertEqual(upgrade["replaces"], "1.3.2-mc1.21.1")
+        self.assertEqual(upgrade["replacesFile"], "create_connected-1.3.2-mc1.21.1.jar")
+        return rid, target
+
+    def test_same_source_dependency_upgrade_replaces_the_existing_metafile(self):
+        rid, target = self.queue_dependency_upgrade()
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "applied")
+        meta = tomllib.loads(target.read_text())
+        self.assertEqual(meta["filename"], "create_connected-1.3.3-mc1.21.1.jar")
+        self.assertEqual(meta["side"], "both")
+        self.assertEqual(meta["update"]["modrinth"]["version"], CONNECTED[1])
+        self.assertEqual(self.state_of(rid), "applied")
+        self.assertEqual(len(list(target.parent.glob("create-connected*.pw.toml"))), 1)
+
+    def enable_export(self):
+        pack = self.dir / "pack"
+        add_mod(pack, "mods/create-deep-seas.pw.toml", DEEP_SEAS_ON_CURSEFORGE,
+                "Map Deep Seas", "2026-11-15T09:00:00-05:00")
+        self.app.setup = Setup(files=PackFiles(pack), pack_url="https://example.test/pack/pack.toml")
+
+    def exported_files(self):
+        code, setup, _ = self.call("GET", self.public + "/api/setup")
+        self.assertEqual(code, 200)
+        self.assertTrue(setup["curseforge"]["available"], setup)
+        with urllib.request.urlopen(self.public + "/curseforge/pack.zip") as response:
+            self.assertEqual(response.status, 200)
+            with zipfile.ZipFile(io.BytesIO(response.read())) as archive:
+                return json.loads(archive.read("manifest.json"))["files"]
+
+    def test_http_refuses_unmapped_upgrade_and_keeps_public_export(self):
+        target = self.queue_dependency_upgrade(prepare_only=True, mapped=True)
+        self.enable_export()
+        before, original = self.exported_files(), target.read_bytes()
+        code, verdict, _ = self.call("GET", self.public +
+            f"/api/catalog/resolve?source=modrinth&id={PONDER[0]}&version={PONDER[1]}")
+        self.assertEqual(code, 200)
+        self.assertEqual(verdict["status"], "refused", verdict)
+        code, answer, _ = self.ask(ids=PONDER)
+        self.assertEqual(code, 422, answer)
+        self.assertIn("CurseForge", answer["error"])
+        self.assertEqual(self.queue.open_count(), 0)
+        self.assertEqual(target.read_bytes(), original)
+        self.assertEqual(self.exported_files(), before)
+
+    def test_approval_holds_upgrade_if_pack_gained_a_curseforge_mapping(self):
+        rid, target = self.queue_dependency_upgrade(approve=False)
+        old = target.read_text() + '\n[update.curseforge]\nfile-id = 8777572\nproject-id = 947914\n'
+        add_mod(self.dir / "pack", "mods/create-connected.pw.toml", old,
+                "Map before approval", "2026-11-15T11:00:00-05:00")
+        self.enable_export()
+        before = self.exported_files()
+        answer = self.act(rid, "approve")[1]["request"]
+        self.assertEqual(answer["state"], "approved")
+        self.assertIn("CurseForge", answer["note"])
+        self.assertEqual(self.exported_files(), before)
+
+    def test_server_only_cross_catalog_upgrade_still_applies(self):
+        target = self.queue_dependency_upgrade(side="server", prepare_only=True, mapped=True)
+        code, answer, _ = self.ask(ids=PONDER)
+        self.assertEqual(code, 201, answer)
+        rid = answer["request"]["id"]
+        self.assertEqual(self.act(rid, "approve")[1]["request"]["state"], "queued")
+        self.enable_export()
+        before = self.exported_files()
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "applied")
+        meta = tomllib.loads(target.read_text())
+        self.assertEqual(meta["side"], "server")
+        self.assertIn("modrinth", meta["update"])
+        self.assertNotIn("curseforge", meta["update"])
+        self.assertEqual(self.exported_files(), before)
+
+    def test_same_source_curseforge_upgrade_keeps_export_with_new_file_id(self):
+        target = self.queue_dependency_upgrade(prepare_only=True, mapped=True)
+        self.enable_export()
+        before = self.exported_files()
+        # SYNTHETIC server-only requester and CF sha1; use the real adapters
+        # and jar reader. CF text search stays disabled, as in production.
+        original_json = self.http.json
+        jar = self.http.jars[modrinth_url(*CONNECTED)]
+        cf_file = recorded_json("curseforge/files/947914.json")["data"][0]
+        self.http.jars[cf_file["downloadUrl"]] = jar
+
+        def upstream(url, headers=None):
+            reply = original_json(url, headers)
+            if "/v2/project/" + PONDER[0] in url and "/version" not in url:
+                return {**reply, "client_side": "unsupported", "server_side": "required"}
+            if "/mods/947914/files?" in url:
+                return {"data": [{**cf_file, "hashes": [{"algo": 1, "value": hashlib.sha1(jar).hexdigest()}]}]}
+            return reply
+
+        self.http.json = upstream
+        code, answer, _ = self.ask(ids=PONDER)
+        self.assertEqual(code, 201, answer)
+        rid = answer["request"]["id"]
+        self.assertEqual(self.act(rid, "approve")[1]["request"]["state"], "queued")
+        upgrade = self.queue.get(rid).added[1]
+        self.assertEqual((upgrade["source"], upgrade["versionId"]), ("curseforge", "8777573"))
+        self.assertTrue(any("/mods/947914/files?" in url for url in self.http.requests))
+        self.assertFalse(any("api.curseforge.com/v1/mods/search?" in url for url in self.http.requests))
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "applied")
+        meta = tomllib.loads(target.read_text())
+        self.assertEqual(meta["filename"], cf_file["fileName"])
+        self.assertEqual(meta["update"]["curseforge"]["file-id"], 8777573)
+        after = self.exported_files()
+        self.assertIn({"projectID": 947914, "fileID": 8777572, "required": True}, before)
+        self.assertIn({"projectID": 947914, "fileID": 8777573, "required": True}, after)
+        self.assertNotIn({"projectID": 947914, "fileID": 8777572, "required": True}, after)
+
+    def test_queued_upgrade_cannot_remove_mapping_added_after_approval(self):
+        rid, target = self.queue_dependency_upgrade()
+        # Mapping appears after queueing: staging must recheck the actual pack.
+        old = target.read_text() + '\n[update.curseforge]\nfile-id = 8777572\nproject-id = 947914\n'
+        add_mod(self.dir / "pack", "mods/create-connected.pw.toml", old,
+                "Map old Connected", "2026-11-15T11:00:00-05:00")
+        self.enable_export()
+        before = self.exported_files()
+        tree = self.tree()
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "test-failed")
+        self.assertIn("CurseForge", self.queue.get(rid).reason)
+        self.assertNotIn("download", self.host.calls)
+        self.assertNotIn("stop", self.host.calls)
+        self.assertEqual(self.tree(), tree)
+        self.assertEqual(self.exported_files(), before)
+
+    def test_client_dependency_upgrade_refuses_server_only_pack_restriction(self):
+        # Client-only Ponder requires Connected on BOTH; the pack excludes clients.
+        pack = self.dir / "pack"
+        target = pack / "mods/create-connected.pw.toml"
+        add_mod(pack, "mods/create-connected.pw.toml",
+                target.read_text().replace("1.3.3", "1.3.2").replace('side = "both"', 'side = "server"'),
+                "Restrict dependency", "2026-11-15T10:00:00-05:00")
+        (self.mods / "create_connected-1.3.2-mc1.21.1.jar").write_bytes(build_jar(mods_toml("create_connected", "1.3.2")))
+        self.http.jars[modrinth_url(*PONDER)] = build_jar(mods_toml("ponderforkc", "1", [
+            {"modId": "create_connected", "range": "[1.3.3-mc1.21.1,)"}]))
+        code, answer, _ = self.ask(ids=PONDER)
+        self.assertEqual(code, 422, answer)
+        self.assertIn("side", answer["error"].lower())
+
+    def test_client_dependency_upgrade_preserves_compatible_client_restriction(self):
+        rid, target = self.queue_dependency_upgrade(side="client")
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "applied")
+        self.assertEqual(tomllib.loads(target.read_text())["side"], "client")
+        self.assertEqual(self.state_of(rid), "applied")
+
+    def test_approval_rechecks_dependency_side_restrictions(self):
+        rid, target = self.queue_dependency_upgrade(approve=False)
+        add_mod(self.dir / "pack", "mods/create-connected.pw.toml",
+                target.read_text().replace('side = "both"', 'side = "server"'),
+                "Restrict before reapproval", "2026-11-15T11:00:00-05:00")
+        response = self.act(rid, "approve")[1]["request"]
+        self.assertEqual(response["state"], "approved")
+        self.assertIn("side", response["note"].lower())
+
+    def test_upgrade_snapshot_without_side_evidence_is_refused_before_download(self):
+        rid, _ = self.queue_dependency_upgrade()
+        added = self.queue.get(rid).added
+        for entry in added:
+            entry.pop("requiredSides", None)
+        self.queue._db.execute("UPDATE requests SET added = ? WHERE id = ?", (json.dumps(added), rid))
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "test-failed")
+        self.assertNotIn("download", self.host.calls)
+        self.assertIn("requeue", self.queue.get(rid).reason)
+
+    def test_dependency_side_changed_after_queue_fails_before_download(self):
+        rid, target = self.queue_dependency_upgrade()
+        add_mod(self.dir / "pack", "mods/create-connected.pw.toml",
+                target.read_text().replace('side = "both"', 'side = "server"'),
+                "Restrict after approval", "2026-11-15T11:00:00-05:00")
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "test-failed")
+        self.assertNotIn("download", self.host.calls)
+        self.assertIn("side", self.queue.get(rid).reason.lower())
+        self.assertEqual(tomllib.loads(target.read_text())["side"], "server")
+
+    def test_dependency_upgrade_refuses_an_ambiguous_installed_filename(self):
+        rid, target = self.queue_dependency_upgrade(side="server", mapped=True)
+        add_mod(self.dir / "pack", "mods/duplicate.pw.toml", target.read_text(),
+                "Duplicate old file", "2026-11-15T11:00:00-05:00")
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "test-failed")
+        self.assertNotIn("download", self.host.calls)
+        self.assertIn("exactly one", self.queue.get(rid).reason)
+
+    def test_dependency_upgrade_refuses_a_changed_installed_filename(self):
+        rid, target = self.queue_dependency_upgrade(side="server", mapped=True)
+        add_mod(self.dir / "pack", "mods/create-connected.pw.toml", target.read_text().replace("1.3.2", "1.3.4"),
+                "Update after approval", "2026-11-15T11:00:00-05:00")
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "test-failed")
+        self.assertNotIn("download", self.host.calls)
+        self.assertIn("exactly one", self.queue.get(rid).reason)
 
     def test_a_mod_one_request_adds_and_another_needs_is_written_once(self):
         # 2026-11-16, batch 3: Starcatcher was asked for, then Starcatcher's Delight, which needs it. Both

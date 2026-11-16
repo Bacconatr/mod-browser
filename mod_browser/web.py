@@ -126,12 +126,14 @@ class Browse:
     installed: InstalledPort
     _gate: threading.BoundedSemaphore = field(default_factory=lambda: threading.BoundedSemaphore(MAX_RESOLVES))
 
+    pack_root: Path | None = None
+
     def resolve(self, source: str, project_id: str, version_id: str | None) -> Verdict:
         """Raises Busy when MAX_RESOLVES are already running."""
         if not self._gate.acquire(blocking=False):
             raise Busy()
         try:
-            return resolve(self.catalog, self.jars, self.installed, source, project_id, version_id)
+            return resolve(self.catalog, self.jars, self.installed, source, project_id, version_id, self.pack_root)
         finally:
             self._gate.release()
 
@@ -253,6 +255,8 @@ class App:
         self._zip: tuple[Any, bytes] | None = None
         self._cf_zip: tuple[str, bytes] | None = None
         self.monitor, self.catalog, self.name, self.browse = monitor, catalog, name, browse
+        if browse is not None:
+            browse.pack_root = catalog.root
         self.requests = requests if browse is not None else None
         # An unset or short password leaves /admin shut (404), never open.
         self._admin_password = admin_password if admin_password and len(admin_password) >= MIN_ADMIN_PASSWORD else None

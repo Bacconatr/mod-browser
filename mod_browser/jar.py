@@ -51,12 +51,23 @@ class Dependency:
 
 
 @dataclass
+class BundledJar:
+    identity: tuple[str, str] | None
+    artifact_version: str
+    version_range: str
+    provides: list[ProvidedMod]
+    dependencies: list[Dependency]
+
+
+@dataclass
 class JarInfo:
     #: What this jar registers, and what it bundles inside itself (jar-in-jar).
     provides: list[ProvidedMod] = field(default_factory=list)
     #: Only the jar's own `[[mods]]`, the first one being its primary id.
     own: list[ProvidedMod] = field(default_factory=list)
     dependencies: list[Dependency] = field(default_factory=list)
+    bundles: list[BundledJar] = field(default_factory=list)
+    own_dependencies: list[Dependency] | None = None
 
 
 def _read(zf: zipfile.ZipFile, name: str, limit: int) -> bytes:
@@ -134,19 +145,24 @@ def read_jar_info(source: IO[bytes], depth: int = 0) -> JarInfo | None:
         for m in mods:
             version = _str(m.get("version"))
             own.append(ProvidedMod(m["modId"], manifest if not version or "${" in version else version))
+        own_dependencies = list(deps)
         provides = list(own)
+        bundles = []
         if depth < _MAX_DEPTH and "META-INF/jarjar/metadata.json" in names:
-            provides.extend(_nested(zf, names, depth))
-        return JarInfo(provides=provides, own=own, dependencies=deps)
+            nested = _nested(zf, names, depth)
+            provides.extend(nested.provides)
+            bundles.extend(nested.bundles)
+            deps.extend(nested.dependencies)
+        return JarInfo(provides=provides, own=own, dependencies=deps, bundles=bundles, own_dependencies=own_dependencies)
 
 
-def _nested(zf: zipfile.ZipFile, names: set[str], depth: int) -> list[ProvidedMod]:
+def _nested(zf: zipfile.ZipFile, names: set[str], depth: int) -> JarInfo:
     import json
     try:
         meta = json.loads(_read(zf, "META-INF/jarjar/metadata.json", _MAX_SMALL))
     except (ValueError, JarError):
-        return []
-    found: list[ProvidedMod] = []
+        return JarInfo()
+    found = JarInfo()
     jars = meta.get("jars", []) if isinstance(meta, dict) else []
     for item in jars[:_MAX_NESTED_COUNT] if isinstance(jars, list) else []:
         path = item.get("path") if isinstance(item, dict) else None
@@ -160,5 +176,14 @@ def _nested(zf: zipfile.ZipFile, names: set[str], depth: int) -> list[ProvidedMo
         except (JarError, zipfile.BadZipFile, OSError):
             continue
         if inner:
-            found.extend(inner.provides)
+            identifier, version = item.get("identifier", {}), item.get("version", {})
+            identifier = identifier if isinstance(identifier, dict) else {}
+            version = version if isinstance(version, dict) else {}
+            group, artifact = _str(identifier.get("group")), _str(identifier.get("artifact"))
+            found.bundles.append(BundledJar((group, artifact) if group and artifact else None,
+                                           _str(version.get("artifactVersion")), _str(version.get("range")),
+                                           inner.own, inner.own_dependencies or []))
+            found.bundles.extend(inner.bundles)
+            found.provides.extend(inner.provides)
+            found.dependencies.extend(inner.dependencies)
     return found

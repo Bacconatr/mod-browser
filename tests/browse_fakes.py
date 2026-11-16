@@ -87,15 +87,19 @@ def mods_toml(mod_id: str, version: str, deps: list[dict] | None = None) -> str:
     return "\n".join(lines)
 
 
-def build_jar(toml_text: str, manifest_version: str = "", nested: dict[str, bytes] | None = None) -> bytes:
+def build_jar(toml_text: str, manifest_version: str = "", nested: dict[str, bytes] | None = None, jarjar: dict | None = None) -> bytes:
     """A mod jar with the metadata files the resolver reads."""
+    import hashlib
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("META-INF/MANIFEST.MF", f"Manifest-Version: 1.0\nImplementation-Version: {manifest_version}\n")
         zf.writestr("META-INF/neoforge.mods.toml", toml_text)
         if nested:
             zf.writestr("META-INF/jarjar/metadata.json",
-                        json.dumps({"jars": [{"path": f"META-INF/jars/{p}"} for p in nested]}))
+                        json.dumps(jarjar or {"jars": [{"path": f"META-INF/jars/{p}", "identifier": {"group": "fixture", "artifact": p},
+                                                   "version": {"artifactVersion": hashlib.md5(data).hexdigest(),
+                                                               "range": "[" + hashlib.md5(data).hexdigest() + "]"}}
+                                                  for p, data in nested.items()]}))
             for path, data in nested.items():
                 zf.writestr(f"META-INF/jars/{path}", data)
     return out.getvalue()

@@ -108,6 +108,36 @@ def metafile_text(mod: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def sides(side: str) -> set[str]:
+    return {"client", "server"} if side.lower() == "both" else {side.lower()}
+
+
+def export_replacement_problem(previous: dict[str, Any], mod: dict[str, Any]) -> str | None:
+    """Never drop an existing player-side CurseForge mapping during a dependency upgrade.
+
+    Old ids identify old bytes. Only a new CurseForge selection or an explicitly
+    verified twin can supply the replacement's mapping; copying the old ids cannot.
+    """
+    if ("client" in sides(previous.get("side", "both"))
+            and previous.get("update", {}).get("curseforge")
+            and mod.get("source") != "curseforge" and not mod.get("curseforge")):
+        return (f"{mod['name']}: this dependency upgrade has no verified CurseForge file mapping for the new bytes; "
+                "it would disable the player CurseForge export. Choose a CurseForge version or have the owner "
+                "verify a byte-identical twin before replacing it.")
+    return None
+
+
+def pack_sides(tree: Path) -> dict[str, set[str]]:
+    """Intersect duplicate filename restrictions; ambiguity must never widen availability."""
+    found = {}
+    for path in metafiles(tree):
+        data = tomllib.loads(path.read_text())
+        filename = data.get("filename")
+        available = sides(data.get("side", "both"))
+        found[filename] = found.get(filename, available) & available
+    return found
+
+
 class GitPackRepo:
     def __init__(self, root: Path, work: Path):
         self.root, self.work = root, work
@@ -193,10 +223,32 @@ class GitPackRepo:
             if op != "add":
                 raise StageError(f"unknown operation {op!r} for {mod['name']}")
             known = next((existing[k] for k in sorted(op_identity(mod)) if k in existing), None)
+            replaced_file = mod.get("replacesFile")
+            if known is None and mod.get("replaces") and replaced_file:
+                matches = [p for p in metafiles(tree)
+                           if tomllib.loads(p.read_text()).get("filename") == replaced_file]
+                if len(matches) != 1:
+                    raise StageError(f"{mod['name']}: the pack must track exactly one copy of {replaced_file} to replace.")
+                known = matches[0]
+            if known is not None and mod.get("replaces"):
+                previous = tomllib.loads(known.read_text())
+                problem = export_replacement_problem(previous, mod)
+                if problem:
+                    raise StageError(problem)
+                # Keep the pack owner's side restriction when upgrading a dependency.
+                mod = {**mod, "side": previous.get("side", mod.get("side", "both"))}
+            if mod.get("replaces") and "requiredSides" not in mod:
+                raise StageError(f"{mod['name']}: dependency upgrade has no required side evidence; requeue it first.")
+            required = set(mod.get("requiredSides", []))
+            if not required <= sides(mod.get("side", "both")):
+                raise StageError(f"{mod['name']}: pack side restriction excludes required side {', '.join(sorted(required))}; "
+                                 "the owner must change that restriction explicitly.")
             text = metafile_text(mod)
             if known is not None and written is not None and written.get(known) == text == known.read_text():
                 wrote = True  # already done by this batch: nothing to write, nothing missing
                 continue
+            if known is not None and mod.get("replaces") and replaced_file and previous.get("filename") != replaced_file:
+                raise StageError(f"{mod['name']}: the pack's file changed since this dependency upgrade was resolved.")
             if known is not None and not mod.get("replaces"):
                 raise StageError(f"{mod['name']} is already tracked by the pack as {known.relative_to(tree).as_posix()}.")
             if known is None and mod.get("replaces"):

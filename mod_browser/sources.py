@@ -93,14 +93,14 @@ class CompositeCatalog:
         Hints (names of projects the platform lists as dependencies) only widen
         the SEARCH: a modId like "functionalstorage" finds nothing on Modrinth
         while "Functional Storage" does. A project is accepted only if it is
-        named like the mod id itself.
+        confirmed by its jar metadata in the resolver.
         """
         want = norm(mod_id)
         found: dict[tuple[str, str], Project] = {}
         for name in dict.fromkeys([*hints[:3], mod_id]):
             projects, _ = self.search(name)
             for p in projects:
-                if norm(p.slug) == want or norm(p.name) == want:
+                if want in norm(p.slug) or want in norm(p.name):
                     found[(p.source, p.id)] = p
         return list(found.values())
 
@@ -173,6 +173,8 @@ class DirInstalled:
         if info is None:
             return []
         primary = info.own[0].mod_id if info.own else None
+        own_deps = info.own_dependencies if info.own_dependencies is not None else info.dependencies
         return [InstalledMod(m.mod_id, m.version, path.name,
-                             tuple(info.dependencies) if m.mod_id == primary else ())
+                             tuple(own_deps) if m.mod_id == primary else (), primary, m not in info.own,
+                             tuple(info.bundles) if m.mod_id == primary else ())
                 for m in info.provides]
