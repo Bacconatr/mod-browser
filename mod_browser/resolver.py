@@ -13,13 +13,14 @@ Candidate jars and dependency combinations are capped as well.
 
 from __future__ import annotations
 
+import tomllib
 from dataclasses import dataclass, field
 from functools import cmp_to_key
 from typing import Any
 
 from .catalog import InstalledMod, Project, Version, default_version, norm
 from .jar import JarInfo
-from .packrepo import pack_sides, sides
+from .packrepo import export_replacement_problem, metafiles, pack_sides, sides
 from .versions import compare_versions, parse_range, satisfies
 
 #: Provided by the game or the loader, never a download.
@@ -116,6 +117,11 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
                        problems=[Problem("unreadable", f"{project.name}'s jar has no NeoForge mod metadata, so it cannot be checked.")])
 
     restrictions = pack_sides(pack_root) if pack_root is not None else {}
+    pack_entries = {}
+    if pack_root is not None:
+        for path in metafiles(pack_root):
+            meta = tomllib.loads(path.read_text())
+            pack_entries.setdefault(meta.get("filename"), []).append(meta)
     installed_list: list[InstalledMod] = installed_port.mods()
     installed = {m.mod_id: m for m in installed_list}
     already = installed.get(jar.own[0].mod_id)
@@ -141,7 +147,18 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
         if lookups > MAX_LOOKUPS:
             return []
         projects = {}
-        for hint_source, hint_id in hints[:3]:
+        # The installed pack already identifies its CurseForge project. Query
+        # that id directly even when CF text search is disabled; jar metadata
+        # must still prove that each candidate provides the required mod/range.
+        old = installed.get(mod_id)
+        known_cf = set()
+        if old:
+            for meta in pack_entries.get(old.file, []):
+                cf = meta.get("update", {}).get("curseforge", {})
+                if cf.get("project-id") is not None:
+                    known_cf.add(str(cf["project-id"]))
+        project_hints = list(dict.fromkeys([*(("curseforge", pid) for pid in sorted(known_cf)[:3]), *hints[:3]]))
+        for hint_source, hint_id in project_hints:
             try:
                 p = catalog.project(hint_source, hint_id)
                 projects[(p.source, p.id)] = p
@@ -305,6 +322,11 @@ def resolve(catalog: Any, jars: Any, installed_port: Any, source: str, project_i
             if old:
                 entry.replaces = old.version
                 entry.replaces_file = old.file
+                problems = [export_replacement_problem(meta, {"name": entry.name, "source": entry.source})
+                            for meta in pack_entries.get(old.file, [])]
+                if any(problems):
+                    failures = [Problem("incompatible", problem) for problem in problems if problem]
+                    continue
             result, failures = search([*members, (p, v, info, entry)])
             if not failures:
                 return result, []

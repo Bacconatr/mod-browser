@@ -112,6 +112,21 @@ def sides(side: str) -> set[str]:
     return {"client", "server"} if side.lower() == "both" else {side.lower()}
 
 
+def export_replacement_problem(previous: dict[str, Any], mod: dict[str, Any]) -> str | None:
+    """Never drop an existing player-side CurseForge mapping during a dependency upgrade.
+
+    Old ids identify old bytes. Only a new CurseForge selection or an explicitly
+    verified twin can supply the replacement's mapping; copying the old ids cannot.
+    """
+    if ("client" in sides(previous.get("side", "both"))
+            and previous.get("update", {}).get("curseforge")
+            and mod.get("source") != "curseforge" and not mod.get("curseforge")):
+        return (f"{mod['name']}: this dependency upgrade has no verified CurseForge file mapping for the new bytes; "
+                "it would disable the player CurseForge export. Choose a CurseForge version or have the owner "
+                "verify a byte-identical twin before replacing it.")
+    return None
+
+
 def pack_sides(tree: Path) -> dict[str, set[str]]:
     """Intersect duplicate filename restrictions; ambiguity must never widen availability."""
     found = {}
@@ -217,6 +232,9 @@ class GitPackRepo:
                 known = matches[0]
             if known is not None and mod.get("replaces"):
                 previous = tomllib.loads(known.read_text())
+                problem = export_replacement_problem(previous, mod)
+                if problem:
+                    raise StageError(problem)
                 # Keep the pack owner's side restriction when upgrading a dependency.
                 mod = {**mod, "side": previous.get("side", mod.get("side", "both"))}
             if mod.get("replaces") and "requiredSides" not in mod:
