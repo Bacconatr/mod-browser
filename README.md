@@ -112,8 +112,8 @@ misses a change; the answer's `seq` is the next `since`.
 
 Limits: 30 asks a minute (everyone together), 20 wrong names a minute per client
 (a client is Caddy's `X-Forwarded-For`, believed only from `MOD_BROWSER_TRUSTED_PROXIES`,
-default loopback; IPv6 grouped by /64), with a ceiling over all clients together, 200 open
-requests in all (no cap per name: a friend may ask for as many as they like), bodies of 8 KiB. The queue is SQLite in
+default loopback; IPv6 grouped by /64), with a ceiling over all clients together, 50 open
+requests per name, 200 open in all, bodies of 8 KiB. The queue is SQLite in
 `MOD_BROWSER_DATA_DIR`; without that directory, the whitelist file or browsing,
 requests are off and `/queue` and `/admin` are 404.
 

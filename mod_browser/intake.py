@@ -19,6 +19,9 @@ from .queue import OPEN_STATES, Queue, Request
 from .resolver import Verdict
 
 NAME = re.compile(r"^[A-Za-z0-9_]{3,16}$")
+# Names are typed, not signed in, so one known name must not be able to fill the whole queue;
+# 50 is far above what a friend asks for in one sitting (5 was hit in normal use on 2026-11-16).
+MAX_OPEN_PER_NAME = 50
 MAX_OPEN_TOTAL = 200
 REMOVED = "Removed from the queue by the owner."
 OWNER = "Owner"
@@ -57,6 +60,8 @@ class Intake:
             raise Refused(403, "That name is not on the whitelist. Ask the owner to add you first.")
         if not self.limiter.allow():
             raise Refused(429, "Too many requests right now; try again in a minute.")
+        if self.queue.open_for(canonical) >= MAX_OPEN_PER_NAME:
+            raise Refused(429, f"You already have {MAX_OPEN_PER_NAME} open requests; wait for the owner to decide on some.")
         if self.queue.open_count() >= MAX_OPEN_TOTAL:
             raise Refused(429, "The queue is full; try again later.")
         snapshot = self._checked(source, project_id, version_id)
