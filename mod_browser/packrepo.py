@@ -193,10 +193,23 @@ class GitPackRepo:
             if op != "add":
                 raise StageError(f"unknown operation {op!r} for {mod['name']}")
             known = next((existing[k] for k in sorted(op_identity(mod)) if k in existing), None)
+            replaced_file = mod.get("replacesFile")
+            if known is None and mod.get("replaces") and replaced_file:
+                matches = [p for p in metafiles(tree)
+                           if tomllib.loads(p.read_text()).get("filename") == replaced_file]
+                if len(matches) != 1:
+                    raise StageError(f"{mod['name']}: the pack must track exactly one copy of {replaced_file} to replace.")
+                known = matches[0]
+            if known is not None and mod.get("replaces"):
+                previous = tomllib.loads(known.read_text())
+                # Keep the pack owner's side restriction when upgrading a dependency.
+                mod = {**mod, "side": previous.get("side", mod.get("side", "both"))}
             text = metafile_text(mod)
             if known is not None and written is not None and written.get(known) == text == known.read_text():
                 wrote = True  # already done by this batch: nothing to write, nothing missing
                 continue
+            if known is not None and mod.get("replaces") and replaced_file and previous.get("filename") != replaced_file:
+                raise StageError(f"{mod['name']}: the pack's file changed since this dependency upgrade was resolved.")
             if known is not None and not mod.get("replaces"):
                 raise StageError(f"{mod['name']} is already tracked by the pack as {known.relative_to(tree).as_posix()}.")
             if known is None and mod.get("replaces"):

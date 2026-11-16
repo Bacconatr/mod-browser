@@ -20,6 +20,8 @@ from mod_browser.maintenance import AppClient, Journal, Runner
 from mod_browser.packrepo import GitPackRepo, metafile_text
 from mod_browser.ports import BootResult, HostError
 from tests.test_requests import CONNECTED, PONDER, RequestsCase
+from tests.browse_fakes import build_jar, mods_toml, modrinth_url
+from tests.fakes import add_mod
 
 
 class Crash(BaseException):
@@ -422,6 +424,54 @@ class FailureTest(MaintenanceCase):
         self.owner_asks()
         self.assertEqual(self.runner.tick(), "test-failed")
         self.assertNotIn("download", self.host.calls)
+
+    def queue_dependency_upgrade(self):
+        # SYNTHETIC dependency on Connected, installed via CurseForge but found on Modrinth.
+        pack = self.dir / "pack"
+        target = pack / "mods/create-connected.pw.toml"
+        original = target.read_text().replace("1.3.3", "1.3.2").replace('side = "both"', 'side = "server"')
+        add_mod(pack, "mods/create-connected.pw.toml", original, "Install older Connected", "2026-11-15T10:00:00-05:00")
+        (self.mods / "create_connected-1.3.2-mc1.21.1.jar").write_bytes(
+            build_jar(mods_toml("create_connected", "1.3.2-mc1.21.1")))
+        self.http.jars[modrinth_url(*PONDER)] = build_jar(mods_toml("ponderforkc", "1", [
+            {"modId": "create_connected", "range": "[1.3.3-mc1.21.1,)"}]))
+        code, answer, _ = self.ask(ids=PONDER)
+        self.assertEqual(code, 201, answer)
+        rid = answer["request"]["id"]
+        self.assertEqual(self.act(rid, "approve")[1]["request"]["state"], "queued")
+        upgrade = next(a for a in self.queue.get(rid).added if a["projectId"] == CONNECTED[0])
+        self.assertEqual(upgrade["replaces"], "1.3.2-mc1.21.1")
+        self.assertEqual(upgrade["replacesFile"], "create_connected-1.3.2-mc1.21.1.jar")
+        return rid, target
+
+    def test_dependency_upgrade_replaces_the_existing_metafile_across_catalogs(self):
+        rid, target = self.queue_dependency_upgrade()
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "applied")
+        meta = tomllib.loads(target.read_text())
+        self.assertEqual(meta["filename"], "create_connected-1.3.3-mc1.21.1.jar")
+        self.assertEqual(meta["side"], "server")
+        self.assertEqual(meta["update"]["modrinth"]["version"], CONNECTED[1])
+        self.assertEqual(self.state_of(rid), "applied")
+        self.assertEqual(len(list(target.parent.glob("create-connected*.pw.toml"))), 1)
+
+    def test_dependency_upgrade_refuses_an_ambiguous_installed_filename(self):
+        rid, target = self.queue_dependency_upgrade()
+        add_mod(self.dir / "pack", "mods/duplicate.pw.toml", target.read_text(),
+                "Duplicate old file", "2026-11-15T11:00:00-05:00")
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "test-failed")
+        self.assertNotIn("download", self.host.calls)
+        self.assertIn("exactly one", self.queue.get(rid).reason)
+
+    def test_dependency_upgrade_refuses_a_changed_installed_filename(self):
+        rid, target = self.queue_dependency_upgrade()
+        add_mod(self.dir / "pack", "mods/create-connected.pw.toml", target.read_text().replace("1.3.2", "1.3.4"),
+                "Update after approval", "2026-11-15T11:00:00-05:00")
+        self.owner_asks()
+        self.assertEqual(self.runner.tick(), "test-failed")
+        self.assertNotIn("download", self.host.calls)
+        self.assertIn("exactly one", self.queue.get(rid).reason)
 
     def test_a_mod_one_request_adds_and_another_needs_is_written_once(self):
         # 2026-11-16, batch 3: Starcatcher was asked for, then Starcatcher's Delight, which needs it. Both

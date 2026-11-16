@@ -41,7 +41,7 @@ class Version:
     source: str
     project_id: str
     id: str
-    #: The version as the platform labels it; what ranges are checked against.
+    #: The platform label for display and ordering. Ranges use jar-provided versions.
     version_number: str
     channel: str
     published_at: str
@@ -61,6 +61,7 @@ class InstalledMod:
     version: str
     file: str
     dependencies: tuple[Any, ...] = field(default_factory=tuple)
+    primary_id: str | None = None
 
 
 def norm(text: str) -> str:
