@@ -19,7 +19,9 @@ from .queue import OPEN_STATES, Queue, Request
 from .resolver import Verdict
 
 NAME = re.compile(r"^[A-Za-z0-9_]{3,16}$")
-MAX_OPEN_PER_NAME = 5
+# Names are typed, not signed in, so one known name must not be able to fill the whole queue;
+# 50 is far above what a friend asks for in one sitting (5 was hit in normal use on 2026-11-16).
+MAX_OPEN_PER_NAME = 50
 MAX_OPEN_TOTAL = 200
 REMOVED = "Removed from the queue by the owner."
 OWNER = "Owner"

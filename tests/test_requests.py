@@ -166,6 +166,23 @@ class AskTest(RequestsCase):
         self.assertEqual(self.ask(ids=PONDER)[0], 201)
         self.assertEqual(self.ask(name="Fake_Friend", ids=("Vg5TIO6d", "Xe7EqzfQ"))[0], 429)
 
+    def seed_open(self, name: str, count: int) -> None:
+        for i in range(count):
+            self.queue.create(name, False, {"added": [{
+                "source": "modrinth", "projectId": f"OPEN{i:04d}", "versionId": f"V{i:07d}", "name": f"Mod {i}",
+                "versionNumber": "1.0.0", "channel": "release"}], "side": "both"})
+
+    def test_a_friend_with_many_open_requests_can_still_ask(self):
+        self.start()
+        self.seed_open("Test_Player", 10)
+        self.assertEqual(self.ask()[0], 201)
+
+    def test_one_name_cannot_fill_the_whole_queue(self):
+        self.start()
+        self.seed_open("Test_Player", 50)
+        self.assertEqual(self.ask()[0], 429)
+        self.assertEqual(self.ask(name="Fake_Friend")[0], 201)  # everyone else can still ask
+
     def test_a_write_must_be_json_from_this_site(self):
         self.start()
         req = urllib.request.Request(self.public + "/api/requests", data=b'{"name":"Test_Player"}', method="POST",
