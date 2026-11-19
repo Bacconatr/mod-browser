@@ -62,7 +62,7 @@ def _iso(moment: datetime | None) -> str | None:
     return moment.isoformat(timespec="seconds") if moment else None
 
 
-#: Until a boot has been watched to the end: about what the pack takes on guest 120.
+#: Until a boot has been watched to the end: about what the pack takes on the live server.
 DEFAULT_BOOT_SECONDS = 240.0
 #: A watched boot shorter or longer than this is not a boot (or not one worth learning).
 _BOOT_BOUNDS = (20.0, 3600.0)

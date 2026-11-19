@@ -85,7 +85,7 @@ class HostError(Exception):
 
 
 class MaintenanceHost(Protocol):
-    """Guest 120 as the maintenance runner drives it (`dockerhost.DockerHost`; `FakeHost` in the tests).
+    """The game container as the maintenance runner drives it (`dockerhost.DockerHost`; `FakeHost` in the tests).
     The app never holds one: it has no Docker socket. Every method that changes something verifies it
     and raises HostError when it cannot."""
 

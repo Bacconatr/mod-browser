@@ -1,7 +1,7 @@
 """The maintenance runner: the one thing that stops, backs up, test-boots, promotes and starts the server.
 
-It runs on guest 120 itself, as root, started by PVE over `pct exec 120` (a
-timer that ships disabled, and the owner's `recover`). The Internet-facing app
+It runs in the game container itself, as root, started from the hypervisor
+(e.g. `pct exec` from a timer, and the owner's `recover`). The Internet-facing app
 never gets Docker access: it only records that the owner asked for an apply,
 and the runner reaches it on the loopback admin API through `docker exec`
 (`adminctl.py`), so request states still change in one place (`applier.py`).
@@ -533,7 +533,7 @@ class Runner:
             pass
 
 
-# ---- the command line, on guest 120 (PVE: `pct exec 120 -- mod-maintenance <command>`) ----
+# ---- the command line, in the game container (e.g. `pct exec <vmid> -- mod-maintenance <command>`) ----
 EXIT = {"halted": 3, "app-unreachable": 4, "busy": 5}
 
 

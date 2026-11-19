@@ -89,7 +89,7 @@ class Request:
         return {**entry, "fingerprint": fingerprint(entry)}
 
 
-#: What an approval or denial is about. Homelab's pve-mod-queue.py (#1759) hashes the same fields of the
+#: What an approval or denial is about. An external poller (e.g. a Discord bridge) hashes the same fields of the
 #: same feed entry, so it can say "approve THIS request" and the site refuses if it changed since.
 FINGERPRINT_FIELDS = ("requester", "ownerAdded", "mod", "dependencies", "versionId", "added", "kind")
 

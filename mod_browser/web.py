@@ -36,7 +36,7 @@ Admin listener (bound to loopback inside the container; nothing proxies it):
   POST /admin-api/v1/applier/resume           the runner's recovery verified the server: clear the halt
   GET  /admin-api/v1/upstream                 the daily upstream check: last result, any error (reported once a day)
   POST /admin-api/v1/upstream/check           check now
-  PVE reaches it with `pct exec` + `docker exec`, so it needs no password and
+  The hypervisor reaches it with `pct exec` + `docker exec`, so it needs no password and
   must never be published or proxied.
 
 Writes are POST with a JSON body of at most 8 KiB, `Content-Type:
@@ -467,7 +467,7 @@ class App:
             done = intake.requeue(request_id)
         return _json({"request": done.admin()})
 
-    # ---- applying: the owner asks, the maintenance runner (PVE, over pct exec) does the work ----
+    # ---- applying: the owner asks, the maintenance runner (started from the hypervisor) does the work ----
     def _desk(self) -> Any:
         if self.applier is None or not self.applier.enabled:
             raise Refused(409, "The applier is switched off.")

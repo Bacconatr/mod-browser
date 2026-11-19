@@ -1,7 +1,10 @@
-# The mod site for the Aeronautics server (guest 120). Standard library only:
-# this runs on the one Internet-facing guest, so it carries no third-party
+# The mod site for an Aeronautics Minecraft server. Standard library only:
+# it is meant to face the Internet, so it carries no third-party
 # Python packages. git reads the pack's history; tzdata reads the log's times.
 FROM python:3.13.17-alpine3.24
+
+LABEL org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.source="https://github.com/Bacconatr/mod-browser"
 
 RUN apk add --no-cache git tzdata
 
@@ -14,7 +17,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOME=/tmp
 
-# uid 1000 owns the RCON password file on the guest (0400); nothing else here
+# uid 1000 owns the RCON password file on the host (0400); nothing else here
 # needs a name.
 USER 1000:1000
 EXPOSE 8080

@@ -128,8 +128,8 @@ class FetchHttp:
         declared = response.getheader("Content-Length")
         if declared and declared.isdigit() and int(declared) > cap:
             raise FetchError("body is too large")
-        # 1 MiB in memory, then the file is on disk (/tmp, which Homelab mounts
-        # from the guest disk): a jar is read from it once, so RAM buys nothing.
+        # 1 MiB in memory, then the file is on disk (/tmp, which the deployment
+        # should mount from disk): a jar is read from it once, so RAM buys nothing.
         out = tempfile.SpooledTemporaryFile(max_size=1024 * 1024)
         total = 0
         try:

@@ -2,7 +2,7 @@
 
 The work (stage the candidate pack, stop the server, back the world up,
 test-boot a copy, promote, start, roll back) is done by the maintenance runner
-(`maintenance.py`), which PVE runs on guest 120 over `pct exec`. This
+(`maintenance.py`), which the hypervisor runs inside the game container. This
 Internet-facing app has no Docker socket and never gets one, so it cannot stop
 or start anything. It only:
 
@@ -38,7 +38,7 @@ PHASES = ("idle", "requested", "waiting", "staging", "warning", "stopping", "bac
 
 #: The phases a restart walks through, in order, and how long each is assumed to take until a finished
 #: batch has been measured (then `learn` moves them toward what really happened). The warning is the
-#: runner's in-game countdown (60 s); the rest are first guesses for guest 120, deliberately on the slow side.
+#: runner's in-game countdown (60 s); the rest are first guesses for a mid-sized pack, deliberately on the slow side.
 RESTART_PHASES = ("warning", "stopping", "backing-up", "test-booting", "promoting", "starting")
 DEFAULT_SECONDS = {"warning": 60, "stopping": 60, "backing-up": 120, "test-booting": 300, "promoting": 30,
                    "starting": 300}

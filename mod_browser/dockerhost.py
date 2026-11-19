@@ -1,4 +1,4 @@
-"""The real `MaintenanceHost`: guest 120's Docker, files and firewall, driven as root by the runner.
+"""The real `MaintenanceHost`: the game container's Docker, files and firewall, driven as root by the runner.
 
 Never imported by the web app (it has no Docker socket); only `maintenance.main` builds one.
 Every change is verified before the method returns, and an unverifiable one raises HostError.

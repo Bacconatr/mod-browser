@@ -13,8 +13,8 @@ pack keeps them); failing that by the jar's name without its version, because
 the owner's own pins are often Modrinth files (Create Deep Seas) that
 CurseForge knows under another id. The name match is only for a metafile with
 no CurseForge id, and only between files of one kind (jar or not): a metafile
-that names a CurseForge project is that project and no other. v3.0HF (Homelab
-#1789) is why: the comparison saw only mods/, so 37 resource and data packs
+that names a CurseForge project is that project and no other. v3.0HF is why:
+the comparison saw only mods/, so 37 resource and data packs
 came in again as new mods, and "Boatload ZH_HK Translation" matched the
 Boatload mod by name and replaced it.
 
@@ -121,7 +121,7 @@ class PackMod:
 
     @property
     def misplaced(self) -> bool:
-        """Something that is not a jar, in mods/: v3.0HF's duplicates (#1789)."""
+        """Something that is not a jar, in mods/: v3.0HF's duplicates."""
         return self.folder == "mods" and not _is_jar(self.file_name)
 
 
@@ -212,7 +212,7 @@ def _folder_of(up: UpstreamMod, known: dict[int, str]) -> str | None:
 
 def diff_release(pack: list[PackMod], release: Release) -> tuple[Diff, list[dict[str, Any]]]:
     """(the difference, and the pack operations that would make the pack match upstream)."""
-    # A project the pack lists twice (v3.0HF's copies in mods/, #1789) matches the copy in its own folder.
+    # A project the pack lists twice (v3.0HF's copies in mods/) matches the copy in its own folder.
     by_project: dict[tuple[str | None, str], PackMod] = {}
     for m in sorted(pack, key=lambda m: m.misplaced):
         if m.project_id:
@@ -245,8 +245,8 @@ def diff_release(pack: list[PackMod], release: Release) -> tuple[Diff, list[dict
         else:
             diff.changed.append({"name": up.name, "from": mine.version, "to": up.version})
             ops.append(_op(up, "change", metafile=mine.path, side=mine.side, replaces=mine.version))
-    # A non-jar in mods/ whose project the pack also keeps in its own folder is a second copy (v3.0HF wrote 37,
-    # #1789): it goes, whoever added it. That is how the next update repairs the pack through the runner.
+    # A non-jar in mods/ whose project the pack also keeps in its own folder is a second copy (v3.0HF wrote 37):
+    # it goes, whoever added it. That is how the next update repairs the pack through the runner.
     proper = {m.project_id for m in pack if m.project_id and not m.misplaced}
     for mine in pack:
         if mine.path in matched or mine.source != "curseforge":

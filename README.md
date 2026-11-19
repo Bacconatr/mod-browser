@@ -1,13 +1,15 @@
 # mod-browser
 
-The status page and mod list for the Aeronautics server ("Tel Aviv", guest
-120 in [Homelab](https://github.com/Bacconatr/Homelab)), served at
-`https://mods.example.com`. Spec: Homelab #1675. This repo: #1679
-(status page and mod list) and #1680 (read-only mod search and compatibility
-verdicts). The request queue, `/admin` and Discord control come in later tickets.
+The status page, mod list, mod requests and maintenance runner for a
+Create: Aeronautics Minecraft server, packed with
+[packwiz](https://packwiz.infra.link/). It runs as one
+Docker container next to the game server's compose project, typically inside
+a container on a Proxmox host, behind a TLS reverse proxy (e.g.
+`https://mods.example.com`). Python standard library only.
 
-Deployed by Homelab's `aeronautics` role (`tasks/mod-browser.yml`), pinned to
-a commit of this repo. Bump the pin in a Homelab PR, like an image tag.
+Deploy it by building the image from a pinned commit of this repo, like an
+image tag, and configuring it through the environment (see "Configuration").
+MIT licensed (`LICENSE`).
 
 ## What it shows, and where each value comes from
 
@@ -26,7 +28,7 @@ a commit of this repo. Bump the pin in a Homelab PR, like an image tag.
 
 **Added by / on.** The latest commit that added the metafile names who and
 when. A `Requested-by: <name>` trailer in that commit's body wins over its
-author. The repo's first commit is the migrated pack (Homelab #1677): its
+author. The repo's first commit is the migrated pack: its
 metafiles are "base pack" unless the pack's `NOTES.md`, section "Mods added on
 top of", lists them. Those are the owner's pre-packwiz extras, dated by the
 first date their note mentions.
@@ -48,8 +50,8 @@ This runs on the Internet-facing guest, so it holds as little as it can:
 - **RCON is read-only.** The adapter refuses every command but `list` and
   `neoforge tps` (not even `say`) before connecting (`mod_browser/rcon.py`, `ALLOWED_COMMANDS`).
   The RCON password is generated on the guest and never leaves it.
-- **No Discord or GitHub credential**, ever (spec story 40). PVE does the
-  Discord side by polling the admin API.
+- **No Discord or GitHub credential**, ever. Anything that talks to Discord
+  (e.g. a poller on the hypervisor) does so by polling the admin API.
 - **Standard library only.** No third-party Python packages in the image.
 - Strict CSP (`default-src 'none'`, scripts and styles from self only), and
   every API value is written into the page with `textContent`.
@@ -97,16 +99,16 @@ or queued request with a fixed reason.
 |---|---|
 | `GET /queue`, `GET /api/requests` | anyone |
 | `POST /api/requests` `{name, source, id, version}` | anyone with a whitelisted name; JSON only, same origin |
-| `GET /admin`, `/admin/api/requests[/<id>/<action>]` | the owner: HTTP Basic, any user name, the vault password (20+ chars; a shorter or missing one leaves `/admin` a 404). The right password always gets in; 10 wrong guesses a minute lock that client out for a minute |
-| `GET /admin-api/v1/requests?since=<seq>`, `POST /admin-api/v1/requests[/<id>/<action>]` | PVE, on the loopback listener only; no password, because only `docker exec` reaches it |
+| `GET /admin`, `/admin/api/requests[/<id>/<action>]` | the owner: HTTP Basic with the password in `MOD_BROWSER_ADMIN_PASSWORD_FILE` (a missing or too-short one leaves `/admin` a 404), rate-limited against guessing |
+| `GET /admin-api/v1/requests?since=<seq>`, `POST /admin-api/v1/requests[/<id>/<action>]` | local tooling on the separate admin listener (`MOD_BROWSER_ADMIN_LISTEN_HOST`). It has no password of its own, so never publish or proxy it |
 
 Actions: `approve`, `deny {reason}`, `override {version}`, `remove`, `requeue`.
 `approve` and `deny` also take an optional `fingerprint`: the sha256 that
 `/admin-api/v1/requests` serves with each entry (`fingerprint` in `queue.py`:
 requester, ownerAdded, mod, dependencies, versionId, added, kind; sorted, compact
-JSON), computed the same way as Homelab's `pve-mod-queue.py` (#1759). If the
+JSON), so an external poller can compute it the same way. If the
 request no longer has it, the answer is 409 with the current one and nothing
-changes, so PVE never approves a request that changed after it posted it.
+changes, so a poller never approves a request that changed after it posted it.
 `since` returns every request changed after that `seq`, so a poller never
 misses a change; the answer's `seq` is the next `since`.
 
@@ -122,9 +124,9 @@ requests are off and `/queue` and `/admin` are 404.
 The app never stops, starts or backs up anything: it has no Docker socket and
 never gets one. It only records the owner's ask, and a separate **maintenance
 runner** (`mod_browser/maintenance.py`, real host adapter `dockerhost.py`) does
-the work. The runner runs on guest 120 as root, started by PVE over
-`pct exec 120` (Homelab's `aeronautics_maintenance` unit, which ships
-disabled). It reaches the app on the loopback admin API through
+the work. The runner runs in the game server's container as root, started
+from outside it (on Proxmox, e.g. `pct exec <vmid> -- mod-maintenance tick`
+from a timer you install yourself). It reaches the app on the loopback admin API through
 `docker exec aeronautics-mod-browser python -m mod_browser.adminctl`, so request
 states still change in one place (`applier.py`, `ApplyDesk`).
 
@@ -258,7 +260,7 @@ never changed or removed: Deep Seas 3.4.5 stays against a bundled 3.3.0
 CurseForge projects are changed, and only base-pack mods (in `mods/`) are
 removed: a resource or data pack upstream stops listing stays for the owner.
 
-**Matching is by project, never by file name** (Homelab #1789). Every metafile
+**Matching is by project, never by file name.** Every metafile
 in the pack is compared, in whatever folder (`mods/`, `resourcepacks/`, the
 pack root), by CurseForge project id. Only a metafile that names no CurseForge
 project falls back to its jar's name without the version (the owner's pins are
@@ -303,16 +305,16 @@ is what catches a client-only mod loaded on the server.
 |---|---|
 | `MOD_BROWSER_LISTEN_HOST` / `_PORT` | `0.0.0.0` / `8080` |
 | `MOD_BROWSER_ADMIN_LISTEN_HOST` / `_PORT` | `127.0.0.1` / `8081` |
-| `MOD_BROWSER_RCON_HOST` / `_PORT` | `mc` / `25575` |
+| `MOD_BROWSER_RCON_HOST` / `_PORT` | `mc` / Minecraft's default RCON port (`25575`) |
 | `MOD_BROWSER_RCON_PASSWORD_FILE` | `/run/secrets/aeronautics/rcon` |
 | `MOD_BROWSER_CONTAINER_NET` | `172.16.0.0/12` (a name resolving outside it counts as down) |
 | `MOD_BROWSER_LOG_FILE`, `_LOG_TZ` | `/srv/logs/latest.log`, `America/New_York` |
 | `MOD_BROWSER_PACK_DIR` | `/srv/pack` |
-| `MOD_BROWSER_SERVER_NAME`, `_SERVER_ADDRESS` | `Tel Aviv`, `play.example.com` |
+| `MOD_BROWSER_SERVER_NAME`, `_SERVER_ADDRESS` | `Tel Aviv`, `play.example.com` (set both for your server) |
 | `MOD_BROWSER_STATUS_MAX_AGE` | `10` (seconds) |
 | `MOD_BROWSER_TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` (whose `X-Forwarded-For` is believed) |
 | `MOD_BROWSER_APPLIER` | `0` (see "Applying requests": the app records asks; the runner on the guest does the work) |
-| `MOD_BROWSER_PUBLIC_URL` | `https://mods.example.com` (the pack URL in the instance is `<this>/pack/pack.toml`) |
+| `MOD_BROWSER_PUBLIC_URL` | `https://mods.example.com` (set it; the pack URL in the instance is `<this>/pack/pack.toml`) |
 | `MOD_BROWSER_BOOTSTRAP_JAR` | `/srv/prism/packwiz-installer-bootstrap.jar` |
 | `MOD_BROWSER_PRISM_MIN_MB` / `_MAX_MB` | `2048` / `6144` |
 | `MOD_BROWSER_DATA_DIR` | `/srv/data` (writable; holds `requests.db`) |
@@ -325,10 +327,12 @@ is what catches a client-only mod loaded on the server.
 python3 -m unittest discover -s tests -t . -v   # needs git; Python 3.11+
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same on the homelab's self-hosted
-runner, plus gitleaks over the full history.
+CI (`.github/workflows/ci.yml`) runs the same on GitHub-hosted runners, plus
+gitleaks over the full history. Its jobs run only for pushes and for pull
+requests from branches of this repository; keep that guard if you point
+`CI_RUNS_ON` at a self-hosted runner.
 
-## Find a mod (#1680)
+## Find a mod
 
 `/add` searches Modrinth for NeoForge 1.21.1, shows its versions, and explains
 what the requested jar and its required dependencies would add to the pack.
@@ -336,7 +340,7 @@ The verdict reads each jar's `neoforge.mods.toml` and the server's installed
 mods; it does not change the pack or the game. It flags installed mods,
 incompatibilities, unsatisfied ranges, client-only mods, and blocked downloads.
 
-CurseForge text search currently returns 403 for this key (Homelab #1680).
+CurseForge text search returned 403 for the key this was built with.
 The page accepts a CurseForge project ID pasted from the project's About panel;
 project and file lookup work. A pasted slug link asks for that ID. Dependency
 search may therefore miss a CurseForge-only version while text search is off;

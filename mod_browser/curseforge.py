@@ -1,7 +1,7 @@
 """CurseForge, narrowed to NeoForge 1.21.1. Needs an API key.
 
 Our key gets 403 from `/v1/mods/search` though `/v1/mods/{id}` and
-`/v1/mods/{id}/files` answer 200 (Homelab #1680, measured 2026-11-12). So
+`/v1/mods/{id}/files` answer 200 (measured 2026-11-12). So
 text search is a switch that is off by default, and a CurseForge-only mod
 comes in by its project id. The responses recorded for the tests are
 hand-written from the documented schema: none could be recorded.

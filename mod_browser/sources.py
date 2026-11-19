@@ -24,7 +24,7 @@ class CompositeCatalog:
     """Modrinth plus, when a key is configured, CurseForge.
 
     `curseforge_search` is off in production: CurseForge's /v1/mods/search
-    returns 403 for our key (Homelab #1680, 2026-11-12), while `/mods/{id}`
+    returns 403 for our key (2026-11-12), while `/mods/{id}`
     and `/mods/{id}/files` work. So a CurseForge-only mod comes in by pasted
     project id. Turn it on when search starts answering 200.
     """

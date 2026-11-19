@@ -7,7 +7,7 @@ and every read is capped, so a hostile jar from a public search cannot
 exhaust memory. A nested jar (jar-in-jar) is copied in chunks to a spooled
 temporary file, never held whole in memory: a "bundled" jar nests jars of
 30 MiB or more, and holding them as bytes cost 110 MiB of a 128 MiB
-container for one 34 MiB jar (measured on guest 120, 2026-11-14), which
+container for one 34 MiB jar (measured on the live server, 2026-11-14), which
 the kernel answered by killing the app.
 """
 
