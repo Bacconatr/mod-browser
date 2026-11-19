@@ -10,13 +10,7 @@
    "icon_url": "https://cdn.modrinth.com/data/cO40ZIg3/bc3267a800469a0b867a0100706543bbd02f303a_96.webp",
    "date_modified": "2026-10-14T18:42:56.812758+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "forge",
-    "neoforge",
-    "storage",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "TQJ3P8Ie",
@@ -27,13 +21,7 @@
    "icon_url": "https://cdn.modrinth.com/data/TQJ3P8Ie/2665960ab010a78a351c70d1668ae8ae9d6d4690_96.webp",
    "date_modified": "2025-08-17T11:04:16.257936+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "management",
-    "neoforge",
-    "storage",
-    "technology"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "DvdmuWPu",
@@ -44,11 +32,7 @@
    "icon_url": "https://cdn.modrinth.com/data/DvdmuWPu/15ff98fc077564ff87f86c7a0e152ec8000c5fa5_96.webp",
    "date_modified": "2026-08-21T14:24:47.898581+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "neoforge",
-    "storage"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "ffIBVRxx",
@@ -59,12 +43,7 @@
    "icon_url": "https://cdn.modrinth.com/data/ffIBVRxx/44b854d6ced82393e9f288a6d1df1d22b04e8ed3.png",
    "date_modified": "2026-09-21T02:38:14.939694+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "neoforge",
-    "storage",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "2dTrqgKP",
@@ -75,15 +54,7 @@
    "icon_url": "https://cdn.modrinth.com/data/2dTrqgKP/92ecc1275581397d828198083a758770df43f82e.png",
    "date_modified": "2026-05-24T03:00:31.719751+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "cursed",
-    "game-mechanics",
-    "magic",
-    "neoforge",
-    "storage",
-    "technology"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "y0D2T7r6",
@@ -94,15 +65,7 @@
    "icon_url": "https://cdn.modrinth.com/data/y0D2T7r6/cffaf48124d8121f479bceb5b603714f0d9a0ace.png",
    "date_modified": "2026-09-01T01:33:27.407714+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "management",
-    "neoforge",
-    "storage",
-    "technology",
-    "transportation",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "hMlaZH8f",
@@ -113,12 +76,7 @@
    "icon_url": "https://cdn.modrinth.com/data/hMlaZH8f/8c041db5cf8062e7471d5e239836c8b807853def_96.webp",
    "date_modified": "2026-11-12T20:08:12.931475+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "forge",
-    "neoforge",
-    "storage"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "RCRxC1tD",
@@ -129,30 +87,18 @@
    "icon_url": "https://cdn.modrinth.com/data/RCRxC1tD/1d94749f1ce48c2342f98bca9aaac8f9cee80aa9_96.webp",
    "date_modified": "2026-11-10T14:30:38.162981+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "decoration",
-    "forge",
-    "neoforge"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "ZOgCd8lk",
    "slug": "aesthetic-storage",
    "title": "Aesthetic Storage",
-   "description": "Add stylish, functional storage furniture to Minecraft! Craft cabinets, cupboards, and more from all vanilla woods \u2013 with support for Arboreal Nature and Wild Fields woods.",
+   "description": "Add stylish, functional storage furniture to Minecraft! Craft cabinets, cupboards, and more from all vanilla woods – with support for Arboreal Nature and Wild Fields woods.",
    "downloads": 34736,
    "icon_url": "https://cdn.modrinth.com/data/ZOgCd8lk/80e12afb431abad0ba098eb30a93890222ad4b27_96.webp",
    "date_modified": "2025-11-03T18:36:28.921416+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "decoration",
-    "fabric",
-    "forge",
-    "neoforge",
-    "storage"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "y1qmWFWM",
@@ -163,13 +109,7 @@
    "icon_url": "https://cdn.modrinth.com/data/y1qmWFWM/d4c8b393ce745b6d6dd9a1353c55b303e86dc3ee.png",
    "date_modified": "2026-11-05T16:32:46.113378+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "neoforge",
-    "storage",
-    "technology",
-    "transportation"
-   ]
+   "server_side": "required"
   }
  ]
 }

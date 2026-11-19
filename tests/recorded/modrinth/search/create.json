@@ -10,14 +10,7 @@
    "icon_url": "https://cdn.modrinth.com/data/LNytGWDc/61d716699bcf1ec42ed4926a9e1c7311be6087e2_96.webp",
    "date_modified": "2026-04-21T22:19:59.671226+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "decoration",
-    "forge",
-    "neoforge",
-    "technology",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "kU1G12Nn",
@@ -28,19 +21,7 @@
    "icon_url": "https://cdn.modrinth.com/data/kU1G12Nn/d8d1ec226747a800ba175f70ad00a80f37047cb6_96.webp",
    "date_modified": "2026-10-01T17:49:19.395097+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "decoration",
-    "fabric",
-    "food",
-    "forge",
-    "neoforge",
-    "quilt",
-    "storage",
-    "technology",
-    "transportation",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "UT2M39wf",
@@ -51,14 +32,7 @@
    "icon_url": "https://cdn.modrinth.com/data/UT2M39wf/17960b56556c644249686a22172eda0924f8bbe0_96.webp",
    "date_modified": "2026-11-08T04:06:31.765810+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "decoration",
-    "fabric",
-    "forge",
-    "neoforge",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "oWaK0Q19",
@@ -69,15 +43,7 @@
    "icon_url": "https://cdn.modrinth.com/data/oWaK0Q19/f66b5589924884ffd81acb27f3ccb775867a962e_96.webp",
    "date_modified": "2026-08-29T18:45:10.016528+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "adventure",
-    "decoration",
-    "game-mechanics",
-    "neoforge",
-    "technology",
-    "transportation"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "GWp4jCJj",
@@ -88,18 +54,7 @@
    "icon_url": "https://cdn.modrinth.com/data/GWp4jCJj/39d228c7abac7bb782db7d3f203a24beb164455f_96.webp",
    "date_modified": "2026-06-22T22:26:11.297547+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "adventure",
-    "equipment",
-    "fabric",
-    "forge",
-    "game-mechanics",
-    "neoforge",
-    "quilt",
-    "technology",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "sMvUb4Rb",
@@ -110,15 +65,7 @@
    "icon_url": "https://cdn.modrinth.com/data/sMvUb4Rb/b60e1330b10bd1d7b1f2c0b7337a25f73b0eb555_96.webp",
    "date_modified": "2026-04-18T03:49:59.780319+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "decoration",
-    "fabric",
-    "forge",
-    "neoforge",
-    "technology",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "GmjmRQ0A",
@@ -129,14 +76,7 @@
    "icon_url": "https://cdn.modrinth.com/data/GmjmRQ0A/d2d4a1a5cfc7f1ececf50dc977021c62654ccdc8_96.webp",
    "date_modified": "2026-09-20T09:52:46.095806+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "fabric",
-    "food",
-    "forge",
-    "neoforge",
-    "technology"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "Vg5TIO6d",
@@ -147,14 +87,7 @@
    "icon_url": "https://cdn.modrinth.com/data/Vg5TIO6d/2e69151b9664c7f03f0568c5fdf1d44aa98db452_96.webp",
    "date_modified": "2026-08-31T12:36:37.840468+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "decoration",
-    "forge",
-    "neoforge",
-    "technology",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "ZM3tt6p1",
@@ -165,12 +98,7 @@
    "icon_url": "https://cdn.modrinth.com/data/ZM3tt6p1/53719ad7b62929d86b6b02bd8f54d15da0217885_96.webp",
    "date_modified": "2026-07-30T17:45:22.322468+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "forge",
-    "neoforge",
-    "technology"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "JWGBpFUP",
@@ -181,14 +109,7 @@
    "icon_url": "https://cdn.modrinth.com/data/JWGBpFUP/9571cd419c5eee9f2017f0b6f7cf6e81c665723b_96.webp",
    "date_modified": "2026-10-09T04:22:16.261668+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "fabric",
-    "forge",
-    "neoforge",
-    "storage",
-    "technology"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "FTeXqI9v",
@@ -199,13 +120,7 @@
    "icon_url": "https://cdn.modrinth.com/data/FTeXqI9v/1ac4b41d0ddd54fd432fd61edfa70c2d66ccf4ae_96.webp",
    "date_modified": "2026-06-08T07:57:09.605943+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "fabric",
-    "forge",
-    "neoforge",
-    "technology"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "btq68HMO",
@@ -216,13 +131,7 @@
    "icon_url": "https://cdn.modrinth.com/data/btq68HMO/d5c04195d567b0d7314bfadd993eb1ba44dd9c38_96.webp",
    "date_modified": "2026-10-09T04:14:40.488911+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "food",
-    "forge",
-    "neoforge",
-    "technology"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "gJ5afkVv",
@@ -233,18 +142,7 @@
    "icon_url": "https://cdn.modrinth.com/data/gJ5afkVv/56ec1e3caca241855a19b65ad391aa20a79259f5_96.webp",
    "date_modified": "2025-03-13T14:13:00.225043+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "decoration",
-    "equipment",
-    "fabric",
-    "forge",
-    "neoforge",
-    "quilt",
-    "technology",
-    "transportation",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "x49wilh8",
@@ -255,17 +153,7 @@
    "icon_url": "https://cdn.modrinth.com/data/x49wilh8/c52e15692d7911bd7a74413ca97d4e98ece0cefb_96.webp",
    "date_modified": "2026-05-28T00:28:08.071744+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "decoration",
-    "economy",
-    "fabric",
-    "forge",
-    "neoforge",
-    "quilt",
-    "storage",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "r4Knci2k",
@@ -276,17 +164,7 @@
    "icon_url": "https://cdn.modrinth.com/data/r4Knci2k/d0dd0604c63c68eaaf9ab5aa0a7166e9904412a8_96.webp",
    "date_modified": "2026-01-29T02:53:20.966212+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "decoration",
-    "fabric",
-    "forge",
-    "neoforge",
-    "quilt",
-    "technology",
-    "transportation",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "UbFnAd4l",
@@ -297,14 +175,7 @@
    "icon_url": "https://cdn.modrinth.com/data/UbFnAd4l/bb045c85270cd6a59ec939530fc77343cae2f526_96.webp",
    "date_modified": "2026-07-31T05:28:22.197253+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "equipment",
-    "fabric",
-    "forge",
-    "neoforge",
-    "technology"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "JmybsfWs",
@@ -315,18 +186,7 @@
    "icon_url": "https://cdn.modrinth.com/data/JmybsfWs/10e9ec54bd09e581dda15fc57eb754eca199ef10_96.webp",
    "date_modified": "2026-05-04T11:52:18.941922+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "decoration",
-    "equipment",
-    "fabric",
-    "forge",
-    "game-mechanics",
-    "neoforge",
-    "quilt",
-    "technology",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "ResbpANg",
@@ -337,14 +197,7 @@
    "icon_url": "https://cdn.modrinth.com/data/ResbpANg/45cf8d089b09c9bf997d46c353baacf95572db43_96.webp",
    "date_modified": "2026-09-27T17:37:39.966104+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "fabric",
-    "forge",
-    "neoforge",
-    "technology",
-    "worldgen"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "dzb1a5WV",
@@ -355,14 +208,7 @@
    "icon_url": "https://cdn.modrinth.com/data/dzb1a5WV/b31b508ca740a1f8eadc18c753190f2605cb6651_96.webp",
    "date_modified": "2026-09-21T05:07:00.460593+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "fabric",
-    "forge",
-    "game-mechanics",
-    "neoforge",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "L1RT5SJc",
@@ -373,15 +219,7 @@
    "icon_url": "https://cdn.modrinth.com/data/L1RT5SJc/b06854807a8f2de721be7484c3777c8ef8d616ee_96.webp",
    "date_modified": "2026-05-11T19:53:34.961292+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "decoration",
-    "equipment",
-    "fabric",
-    "forge",
-    "neoforge",
-    "utility"
-   ]
+   "server_side": "required"
   }
  ]
 }

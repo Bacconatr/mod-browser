@@ -10,12 +10,7 @@
    "icon_url": "https://cdn.modrinth.com/data/1Ro7m06l/33bf708924b2e7952c308a902bf3e860f1151b9a_96.webp",
    "date_modified": "2026-11-04T21:49:05.911069+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "forge",
-    "library",
-    "neoforge"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "5WUy8vZv",
@@ -26,28 +21,18 @@
    "icon_url": "https://cdn.modrinth.com/data/5WUy8vZv/45385f9794752bd21acde2b52dcf3f95a26171c9.png",
    "date_modified": "2025-09-25T19:21:33.356082+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "equipment",
-    "fabric",
-    "neoforge",
-    "worldgen"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "hg3GpJet",
    "slug": "goldenmauss-titanium-tools",
    "title": "GoldenMaus's Titanium Tools",
-   "description": "A lightweight expansion introducing Titanium \u2014 the perfect step between Diamond and Netherite.",
+   "description": "A lightweight expansion introducing Titanium — the perfect step between Diamond and Netherite.",
    "downloads": 992,
    "icon_url": "https://cdn.modrinth.com/data/hg3GpJet/f8d07aeaba1de08d20e08846e7de5b39d421585c_96.webp",
    "date_modified": "2025-11-02T15:19:35.436853+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "forge",
-    "neoforge"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "gtT5hoyI",
@@ -58,15 +43,7 @@
    "icon_url": "https://cdn.modrinth.com/data/gtT5hoyI/159d10426cd9808e148075c5f92aaee8618b309b_96.webp",
    "date_modified": "2026-03-03T20:14:31.241433+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "equipment",
-    "forge",
-    "magic",
-    "neoforge",
-    "technology",
-    "utility"
-   ]
+   "server_side": "required"
   }
  ]
 }

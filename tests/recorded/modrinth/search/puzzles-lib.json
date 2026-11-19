@@ -10,13 +10,7 @@
    "icon_url": "https://cdn.modrinth.com/data/QAGBst4M/c78216c61f65b6ce82593e4e92e9c358402bb524_96.webp",
    "date_modified": "2026-11-12T15:39:54.996203+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "fabric",
-    "forge",
-    "library",
-    "neoforge"
-   ]
+   "server_side": "required"
   }
  ]
 }

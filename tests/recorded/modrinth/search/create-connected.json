@@ -10,14 +10,7 @@
    "icon_url": "https://cdn.modrinth.com/data/Vg5TIO6d/2e69151b9664c7f03f0568c5fdf1d44aa98db452_96.webp",
    "date_modified": "2026-08-31T12:36:37.840468+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "decoration",
-    "forge",
-    "neoforge",
-    "technology",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "59EBKVqI",
@@ -28,12 +21,7 @@
    "icon_url": "https://cdn.modrinth.com/data/59EBKVqI/d23096bac2c1be52f7f69fdeac2f9593c91446ff_96.webp",
    "date_modified": "2026-06-14T20:24:23.573632+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "management",
-    "neoforge",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "z75uv1Pl",
@@ -44,13 +32,7 @@
    "icon_url": "https://cdn.modrinth.com/data/z75uv1Pl/d4bacbdfa4c35b5ea6e6ae5411a5a5cbf23c7525_96.webp",
    "date_modified": "2026-10-28T04:29:36.529850+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "decoration",
-    "neoforge",
-    "technology",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "3ADr1McV",
@@ -61,12 +43,7 @@
    "icon_url": "https://cdn.modrinth.com/data/3ADr1McV/594298daa853a42d62ca4773e76c98c3a0010fde_96.webp",
    "date_modified": "2026-09-18T18:02:12.654545+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "neoforge",
-    "technology",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "pvYjawq0",
@@ -77,13 +54,7 @@
    "icon_url": "https://cdn.modrinth.com/data/pvYjawq0/f5d10c6a12b857649612a5f1b700f205c98e2e6a_96.webp",
    "date_modified": "2026-06-11T06:04:43.735366+00:00",
    "client_side": "optional",
-   "server_side": "required",
-   "categories": [
-    "game-mechanics",
-    "neoforge",
-    "storage",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "hgPqopXJ",
@@ -94,11 +65,7 @@
    "icon_url": "https://cdn.modrinth.com/data/hgPqopXJ/c21f531b8c73fb5b2e801283f4f472d424b924da_96.webp",
    "date_modified": "2026-08-09T20:46:44.571124+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "neoforge",
-    "technology"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "BdAgIYXr",
@@ -109,13 +76,7 @@
    "icon_url": "https://cdn.modrinth.com/data/BdAgIYXr/b27c83c79f4d67f8ee5f0deccf10117c14a7ea1c_96.webp",
    "date_modified": "2026-07-13T04:08:30.832482+00:00",
    "client_side": "required",
-   "server_side": "unsupported",
-   "categories": [
-    "game-mechanics",
-    "neoforge",
-    "optimization",
-    "technology"
-   ]
+   "server_side": "unsupported"
   },
   {
    "project_id": "1Q74Gtvt",
@@ -126,33 +87,18 @@
    "icon_url": "https://cdn.modrinth.com/data/1Q74Gtvt/8f31986a1fcff9ecc16447f24588769ba4f4e7a9_96.webp",
    "date_modified": "2026-06-30T00:00:04.349694+00:00",
    "client_side": "optional",
-   "server_side": "required",
-   "categories": [
-    "datapack",
-    "fabric",
-    "forge",
-    "game-mechanics",
-    "management",
-    "neoforge",
-    "quilt"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "aMDomE4d",
    "slug": "createconnected-and-destroy-compat-fix",
-   "title": "\u0421reate:Connected Vessel compat fix",
+   "title": "Сreate:Connected Vessel compat fix",
    "description": "Compatibility hotfix for a server crash caused by Create: Connected Fluid Vessels on Create contraptions hen Destroy included into modpack.",
    "downloads": 563,
    "icon_url": "https://cdn.modrinth.com/data/aMDomE4d/5407338bf86333b03e25114de4118b7d3ae10c9b_96.webp",
    "date_modified": "2026-06-25T19:56:33.443876+00:00",
    "client_side": "unsupported",
-   "server_side": "required",
-   "categories": [
-    "game-mechanics",
-    "neoforge",
-    "technology",
-    "utility"
-   ]
+   "server_side": "required"
   },
   {
    "project_id": "ouOYlNGh",
@@ -163,13 +109,7 @@
    "icon_url": "https://cdn.modrinth.com/data/ouOYlNGh/2a964e0926a05c88924245fbe595032c37faba61_96.webp",
    "date_modified": "2026-08-24T23:07:42.188558+00:00",
    "client_side": "required",
-   "server_side": "required",
-   "categories": [
-    "fabric",
-    "game-mechanics",
-    "neoforge",
-    "transportation"
-   ]
+   "server_side": "required"
   }
  ]
 }

@@ -2,7 +2,6 @@
  {
   "id": "kmN5PWk9",
   "project_id": "QAGBst4M",
-  "name": "v21.1.66-mc1.21.1+neoforge",
   "version_number": "21.1.66",
   "version_type": "release",
   "date_published": "2026-10-26T08:47:59.747584Z",
@@ -13,17 +12,14 @@
     "url": "https://cdn.modrinth.com/data/QAGBst4M/versions/kmN5PWk9/puzzleslib-v21.1.66-mc1.21.1%2Bneoforge.jar",
     "primary": true,
     "hashes": {
-     "sha1": "fd584167f1277aef5411a98a22390c65cabe6e07",
      "sha512": "d265016586d39d7e0ac63b064fcad6fd64df79ce885ae81aa1d7a51ba32b4c6849c4b3021b563667eb392599512fe193adfa52b40d99a101ab411dd0b5c5d484"
-    },
-    "size": 1451120
+    }
    }
   ]
  },
  {
   "id": "kiX1lfse",
   "project_id": "QAGBst4M",
-  "name": "v21.1.65-mc1.21.1+neoforge",
   "version_number": "21.1.65",
   "version_type": "release",
   "date_published": "2026-10-21T12:09:24.260464Z",
@@ -34,17 +30,14 @@
     "url": "https://cdn.modrinth.com/data/QAGBst4M/versions/kiX1lfse/puzzleslib-v21.1.65-mc1.21.1%2Bneoforge.jar",
     "primary": true,
     "hashes": {
-     "sha1": "cc24aa9f22a3c9e55f1ce461625bccb7b5fb09c7",
      "sha512": "9ed93c75df6f61e83945944a036304a974a3e09eab34acbe9edbb499a575396dbc789ddc2a81174168a77113b09eef2cdfcb493728f73c6081da3f27630bdea2"
-    },
-    "size": 1451117
+    }
    }
   ]
  },
  {
   "id": "lATqZwtV",
   "project_id": "QAGBst4M",
-  "name": "v21.1.64-mc1.21.1+neoforge",
   "version_number": "21.1.64",
   "version_type": "release",
   "date_published": "2026-10-11T14:00:51.002489Z",
@@ -55,17 +48,14 @@
     "url": "https://cdn.modrinth.com/data/QAGBst4M/versions/lATqZwtV/puzzleslib-v21.1.64-mc1.21.1%2Bneoforge.jar",
     "primary": true,
     "hashes": {
-     "sha512": "f60ecfc9fedf9c6967891024711391abdc6ffb45c09030f221e9bf061a5a99323a612cecf19af4b0d86b7a3dd4c49f273e2a9b2d2b61bbc867f85d9f3034f5b7",
-     "sha1": "8562ac65d4f2a55365d4522934fb0e00cd3d3ec3"
-    },
-    "size": 1451067
+     "sha512": "f60ecfc9fedf9c6967891024711391abdc6ffb45c09030f221e9bf061a5a99323a612cecf19af4b0d86b7a3dd4c49f273e2a9b2d2b61bbc867f85d9f3034f5b7"
+    }
    }
   ]
  },
  {
   "id": "Rd8nOmlF",
   "project_id": "QAGBst4M",
-  "name": "v21.1.63-mc1.21.1+neoforge",
   "version_number": "21.1.63",
   "version_type": "release",
   "date_published": "2026-10-08T17:22:45.657405Z",
@@ -76,17 +66,14 @@
     "url": "https://cdn.modrinth.com/data/QAGBst4M/versions/Rd8nOmlF/puzzleslib-v21.1.63-mc1.21.1%2Bneoforge.jar",
     "primary": true,
     "hashes": {
-     "sha512": "7aaf73d9e8c974a41c77503bb0584032608366b1fa96636a97465ee9fb6d74a5b75b56d4d30fe80b88d3160b938517546ac80053312a403a79477efc45508cc0",
-     "sha1": "0bc04f49c8f0420c2db8c45d9329fe8c1919bc85"
-    },
-    "size": 1451022
+     "sha512": "7aaf73d9e8c974a41c77503bb0584032608366b1fa96636a97465ee9fb6d74a5b75b56d4d30fe80b88d3160b938517546ac80053312a403a79477efc45508cc0"
+    }
    }
   ]
  },
  {
   "id": "1TmfTuyw",
   "project_id": "QAGBst4M",
-  "name": "v21.1.62-mc1.21.1+neoforge",
   "version_number": "21.1.62",
   "version_type": "release",
   "date_published": "2026-09-29T09:35:21.427790Z",
@@ -97,17 +84,14 @@
     "url": "https://cdn.modrinth.com/data/QAGBst4M/versions/1TmfTuyw/puzzleslib-v21.1.62-mc1.21.1%2Bneoforge.jar",
     "primary": true,
     "hashes": {
-     "sha1": "0d1675576fe17acc1f350a5505177ae08c17299b",
      "sha512": "241ff7229990305fe5f85521b9c11cd8e2e8d01cb94bbca987aae4d3d9ecbd9115a4b66f618a62d73ef1b569ff8c72434bc1354bbfaf2f69c0e997db034c4883"
-    },
-    "size": 1450242
+    }
    }
   ]
  },
  {
   "id": "lh44g7RC",
   "project_id": "QAGBst4M",
-  "name": "[NEOFORGE] [1.21.1] v21.1.60",
   "version_number": "21.1.60",
   "version_type": "release",
   "date_published": "2026-09-07T10:30:31.955030Z",
@@ -118,17 +102,14 @@
     "url": "https://cdn.modrinth.com/data/QAGBst4M/versions/lh44g7RC/PuzzlesLib-v21.1.60-mc1.21.1-NeoForge.jar",
     "primary": true,
     "hashes": {
-     "sha512": "630bea2bfeed34074d82bc75a4e3f94bb8235d5ae4b13d59c3ee8832bd493eb34584e81d183c5447bd1754e1845d8397eb910d16678243f64e7df8389ce147ac",
-     "sha1": "319fc1ea1498920b39a318ea324f6112a7318d67"
-    },
-    "size": 1442182
+     "sha512": "630bea2bfeed34074d82bc75a4e3f94bb8235d5ae4b13d59c3ee8832bd493eb34584e81d183c5447bd1754e1845d8397eb910d16678243f64e7df8389ce147ac"
+    }
    }
   ]
  },
  {
   "id": "8eeEFVPU",
   "project_id": "QAGBst4M",
-  "name": "[NEOFORGE] [1.21.1] v21.1.59",
   "version_number": "21.1.59",
   "version_type": "release",
   "date_published": "2026-09-06T15:58:51.931148Z",
@@ -139,17 +120,14 @@
     "url": "https://cdn.modrinth.com/data/QAGBst4M/versions/8eeEFVPU/PuzzlesLib-v21.1.59-mc1.21.1-NeoForge.jar",
     "primary": true,
     "hashes": {
-     "sha512": "3eb51affe05060c8e0543ade7c9475a37d521e741b5ecd6f7e178179014a804abd9b574fbd35cdea2a3720964f620fce039f78e114d4d26258739d418a62e39e",
-     "sha1": "730ed287e76602e5e032a53b224f46dd927fe3e6"
-    },
-    "size": 1429272
+     "sha512": "3eb51affe05060c8e0543ade7c9475a37d521e741b5ecd6f7e178179014a804abd9b574fbd35cdea2a3720964f620fce039f78e114d4d26258739d418a62e39e"
+    }
    }
   ]
  },
  {
   "id": "qbF2d7Ma",
   "project_id": "QAGBst4M",
-  "name": "[NEOFORGE] [1.21.1] v21.1.56",
   "version_number": "21.1.56",
   "version_type": "release",
   "date_published": "2026-08-31T13:08:49.681871Z",
@@ -160,10 +138,8 @@
     "url": "https://cdn.modrinth.com/data/QAGBst4M/versions/qbF2d7Ma/PuzzlesLib-v21.1.56-mc1.21.1-NeoForge.jar",
     "primary": true,
     "hashes": {
-     "sha1": "a5bfa91390084a88e9c7f355f833e76e5cdc3f4c",
      "sha512": "7a0f6e58728684c5099d9fa157a4a9a078019cfc263844506aa43ba87ee1c8f556e01f0b24cf96f9b6dd373bc5da714773f394442a6ad045b157d9a8a36ba5b4"
-    },
-    "size": 1402525
+    }
    }
   ]
  }

@@ -2,21 +2,16 @@
  {
   "id": "grCjEcqZ",
   "project_id": "I5JahfLa",
-  "name": "Ponder For Kaleidoscope Cookery 1.0.0 - 1.21.1",
   "version_number": "1.0.0",
   "version_type": "release",
   "date_published": "2026-02-22T06:33:31.289351Z",
   "dependencies": [
    {
-    "version_id": null,
     "project_id": "LNytGWDc",
-    "file_name": null,
     "dependency_type": "required"
    },
    {
-    "version_id": null,
     "project_id": "v17FatAc",
-    "file_name": null,
     "dependency_type": "required"
    }
   ],
@@ -26,31 +21,24 @@
     "url": "https://cdn.modrinth.com/data/I5JahfLa/versions/grCjEcqZ/ponderforkc-1.0.0.jar",
     "primary": true,
     "hashes": {
-     "sha512": "a842427f6f9214dbdd1fbb3f817a679f6f40940f7459ab153daef13a7dcaeca84ac542466bc17f7b1050ce05b681de8bf176e5cb7cc39ba821c47ab22d748471",
-     "sha1": "d615e051573998f2d71b6c7ee1f56fa19c91dbd8"
-    },
-    "size": 51739
+     "sha512": "a842427f6f9214dbdd1fbb3f817a679f6f40940f7459ab153daef13a7dcaeca84ac542466bc17f7b1050ce05b681de8bf176e5cb7cc39ba821c47ab22d748471"
+    }
    }
   ]
  },
  {
   "id": "OhQhHHZa",
   "project_id": "I5JahfLa",
-  "name": "Ponder For Kaleidoscope Cookery 0.6.0-1.21.1",
   "version_number": "0.6.0-1.21.1",
   "version_type": "beta",
   "date_published": "2026-02-20T07:53:28.784011Z",
   "dependencies": [
    {
-    "version_id": null,
     "project_id": "LNytGWDc",
-    "file_name": null,
     "dependency_type": "required"
    },
    {
-    "version_id": null,
     "project_id": "v17FatAc",
-    "file_name": null,
     "dependency_type": "required"
    }
   ],
@@ -60,10 +48,8 @@
     "url": "https://cdn.modrinth.com/data/I5JahfLa/versions/OhQhHHZa/ponderforkc-0.6.0-1.21.1.jar",
     "primary": true,
     "hashes": {
-     "sha1": "59582d41f5f1ee3f469c4da84d2e3de5922816a2",
      "sha512": "fd25f0a19ace82d5d8625ce93fc7178911ed56bb0f513362479c7ac5160a33004bd92b4d21a7436089b8ee2b83bbd54b21afca233eef3396ed7b267405bbda01"
-    },
-    "size": 50667
+    }
    }
   ]
  }

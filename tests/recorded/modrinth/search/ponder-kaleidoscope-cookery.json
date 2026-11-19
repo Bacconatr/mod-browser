@@ -10,10 +10,7 @@
    "icon_url": "https://cdn.modrinth.com/data/I5JahfLa/9f87dc191ffaf04f8be880cc5fced3f37b6124f7.png",
    "date_modified": "2026-02-22T06:33:30.453967+00:00",
    "client_side": "required",
-   "server_side": "unsupported",
-   "categories": [
-    "neoforge"
-   ]
+   "server_side": "unsupported"
   }
  ]
 }

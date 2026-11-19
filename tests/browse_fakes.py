@@ -1,9 +1,10 @@
 """The catalogs' world for tests: recorded upstream answers, and jars built around real mods.toml text.
 
 Modrinth responses and the `tests/recorded/toml` files are REAL (recorded
-2026-11-12). CurseForge responses are hand-written from its documented
-schema, because `/v1/mods/search` returns 403 for our key and none could be
-recorded; they are unverified against the live API. Anything marked
+2026-11-12), trimmed to the fields the code reads. CurseForge responses are
+hand-written from its documented schema (none are recorded: its API terms
+do not allow redistributing what it serves); they are unverified against
+the live API. Anything marked
 SYNTHETIC in a test is invented.
 """
 
