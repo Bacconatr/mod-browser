@@ -10,14 +10,12 @@ permissions:
 
 jobs:
   test:
-    # The homelab's VM118 runner is the target, like every private repo here:
-    # GitHub bills hosted minutes on a private repo, and a failed charge for
-    # them (2026-11-06) locked every run on the account. No runner is
-    # registered for this repo yet, and a job waiting on a label nobody serves
-    # queues forever, so until one is, the job runs GitHub-hosted (about a
-    # minute). Registering the runner is a Homelab change; then set repository
-    # variable CI_RUNS_ON to ["self-hosted","linux","x64","homelab-ci"].
-    # Same-repository PRs only.
+    # GitHub-hosted by default. Repository variable CI_RUNS_ON can point the
+    # jobs at a self-hosted runner (e.g. ["self-hosted","linux","x64"]).
+    # The `if:` below is the fork guard and MUST stay on every job: it runs
+    # pull requests only from branches of this repository, so a fork's PR
+    # never executes its code on a self-hosted runner. Never switch the
+    # trigger to pull_request_target.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     steps:
@@ -29,7 +27,7 @@ jobs:
       - name: Tests (HTTP API with a fake Server port, and the RCON adapter)
         run: python3 -m unittest discover -s tests -t . -v
 
-  # Guest 120 is Internet-facing: nothing in this repo may hold a credential.
+  # The site is Internet-facing and the repo is public: nothing in it may hold a credential.
   # History is scanned in full on every run because a leak in any commit is permanent.
   secrets:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
