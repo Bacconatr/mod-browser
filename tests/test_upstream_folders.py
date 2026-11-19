@@ -1,4 +1,4 @@
-"""Upstream updates know a project by its id and put it where its type belongs (Homelab #1789).
+"""Upstream updates know a project by its id and put it where its type belongs.
 
 v3.0HF, applied as batch 1 on 2026-11-14, wrote 37 resource and data packs the
 pack already kept in resourcepacks/ (or its root) into mods/ a second time, and

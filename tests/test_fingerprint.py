@@ -1,9 +1,9 @@
-"""Approve or deny exactly the request PVE checked: the optional fingerprint, at the HTTP API.
+"""Approve or deny exactly the request the poller checked: the optional fingerprint, at the HTTP API.
 
-PVE (Homelab's pve-mod-queue.py, #1759) posts a request to Discord with the
+An external poller (e.g. a Discord bridge on the hypervisor) posts a request to Discord with the
 fingerprint of its feed entry, and sends it back with the owner's reaction. The
 site refuses (409) when the request changed in between, so the last few seconds
-between PVE's check and the call cannot approve something the owner never saw.
+between the poller's check and the call cannot approve something the owner never saw.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from tests.test_requests import CONNECTED, RequestsCase
 
 
 def pve_fingerprint(raw):
-    """Copied verbatim from pve-mod-queue.py as merged (Homelab #1759), the other side of the contract."""
+    """Copied verbatim from the external poller as merged, the other side of the contract."""
     decided = {k: raw.get(k) for k in ("requester", "ownerAdded", "mod", "dependencies", "versionId", "added", "kind")}
     blob = json.dumps(decided, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8", "replace")).hexdigest()

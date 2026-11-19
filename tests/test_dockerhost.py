@@ -3,7 +3,7 @@
 `FakeDocker` answers the docker commands `DockerHost` sends, from a small model
 of containers: running or not, when each start began, what each start logged.
 Everything that is not `docker` (tar, cp, chown) runs for real in a temporary
-directory. Backup and restore need GNU tar (guest 120 and CI have it; macOS
+directory. Backup and restore need GNU tar (the live server and CI have it; macOS
 has bsdtar, so those tests skip there).
 """
 
@@ -277,7 +277,7 @@ class TestBootTest(HostCase):
         self.assertIn("Exception in server tick loop", result.reason)
 
 
-@unittest.skipUnless(GNU_TAR, "needs GNU tar (guest 120 and CI have it)")
+@unittest.skipUnless(GNU_TAR, "needs GNU tar (the live server and CI have it)")
 class BackupTest(HostCase):
     def test_restore_puts_the_backup_back_and_keeps_the_failed_world_aside(self):
         self.host.stop_live()

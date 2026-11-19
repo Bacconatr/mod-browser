@@ -9,7 +9,7 @@ from pathlib import Path
 
 from mod_browser.ports import ServerUnavailable
 
-# Captured from guest 120 on 2026-11-12 (rcon-cli's colour codes removed).
+# Captured from the live server on 2026-11-12 (rcon-cli's colour codes removed).
 TPS_REPLY = textwrap.dedent("""\
     Overworld: 20.000 TPS (0.301 ms/tick)
     northstar:earth_orbit: 20.000 TPS (0.078 ms/tick)
@@ -69,7 +69,7 @@ PACK_TOML = textwrap.dedent("""\
     neoforge = "21.1.264"
     """)
 
-# Real metafiles from the pack as migrated (Homelab #1677).
+# Real metafiles from the pack as migrated.
 METAFILES = {
     "mods/create-connected.pw.toml": textwrap.dedent("""\
         name = "Create: Connected"

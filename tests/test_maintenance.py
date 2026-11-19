@@ -1,7 +1,7 @@
 """The maintenance runner and the app's apply desk, together, at the HTTP API.
 
 The app runs for real (both listeners); the runner reaches it over HTTP on the
-loopback listener, as `docker exec` + adminctl does on guest 120. The guest is
+loopback listener, as `docker exec` + adminctl does on the live server. The guest is
 `FakeHost`, a small model of the live server: running or stopped, its world
 and mods, a join block, a test container that can be left over. The pack is a
 real git repository written by the real `GitPackRepo`. A `Crash` thrown from a
@@ -36,7 +36,7 @@ class Crash(BaseException):
 
 
 class FakeHost:
-    """Guest 120: the live server and its files, as far as the runner can change them."""
+    """The game container: the live server and its files, as far as the runner can change them."""
 
     def __init__(self) -> None:
         self.calls: list[str] = []

@@ -217,8 +217,8 @@ class DependencyTest(BrowseCase):
         self.assertEqual(names, ["Straw Statues", "Puzzles Lib"])
 
     def test_a_bundled_jar_larger_than_the_in_memory_spool_is_still_read_for_what_it_bundles(self):
-        # A "bundled" jar nests jars of 30 MiB or more (create-aeronautics-bundled on
-        # guest 120). Past 1 MiB a nested jar is read from a file on disk, not memory.
+        # A "bundled" jar nests jars of 30 MiB or more (create-aeronautics-bundled in
+        # the live pack). Past 1 MiB a nested jar is read from a file on disk, not memory.
         padded = io.BytesIO()
         with zipfile.ZipFile(padded, "w", zipfile.ZIP_STORED) as zf:
             with zipfile.ZipFile(io.BytesIO(build_jar(toml("statuemenus"), "21.1.0"))) as small:

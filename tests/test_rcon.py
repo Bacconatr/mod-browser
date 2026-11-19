@@ -127,7 +127,7 @@ class RconTest(unittest.TestCase):
         os.utime(path, (mtime, mtime))
 
     def test_last_start_survives_the_midnight_log_roll(self):
-        # Measured on guest 120, 2026-11-13: the server started 12 Nov 13:58, and at midnight
+        # Measured on the live server, 2026-11-13: the server started 12 Nov 13:58, and at midnight
         # log4j rolled latest.log, whose first line became a Server-thread save at 00:04.
         (self.tmp / "latest.log").write_text(
             "[13Nov2026 00:04:42.208] [Server thread/INFO] [dev.ryanhcode.sable.Sable/]: Saving sub-levels\n")
