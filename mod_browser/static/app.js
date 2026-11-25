@@ -114,11 +114,12 @@ async function refreshStatus() {
   try {
     const response = await fetch("/api/status", { cache: "no-store" });
     // 502/503/504 come from the proxy in front of the app: the app itself is restarting.
-    if ([502, 503, 504].includes(response.status)) { renderStatus(null, "site"); return; }
+    if ([502, 503, 504].includes(response.status)) { lastStatus = null; renderStatus(null, "site"); return; }
     if (!response.ok) throw new Error(String(response.status));
     lastStatus = await response.json();
     renderStatus(lastStatus);
   } catch {
+    lastStatus = null;
     renderStatus(null);
   }
 }
