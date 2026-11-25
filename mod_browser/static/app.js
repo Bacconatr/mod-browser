@@ -71,6 +71,8 @@ function renderStatus(status, unreachable = "unknown") {
   const state = status ? status.state : unreachable;
   const band = document.querySelector(".band");
   band.dataset.state = state;
+  // Later changes of state fade (app.css, body[data-live]); this first one does not.
+  if (!("live" in document.body.dataset)) requestAnimationFrame(() => requestAnimationFrame(() => { document.body.dataset.live = ""; }));
   $("state-label").textContent = STATES[state].label;
   // A finished update ("online") is old news once the label says Online or Starting up: say nothing.
   const phase = status && status.apply ? status.apply.phase : "idle";
@@ -112,11 +114,12 @@ async function refreshStatus() {
   try {
     const response = await fetch("/api/status", { cache: "no-store" });
     // 502/503/504 come from the proxy in front of the app: the app itself is restarting.
-    if ([502, 503, 504].includes(response.status)) { renderStatus(null, "site"); return; }
+    if ([502, 503, 504].includes(response.status)) { lastStatus = null; renderStatus(null, "site"); return; }
     if (!response.ok) throw new Error(String(response.status));
     lastStatus = await response.json();
     renderStatus(lastStatus);
   } catch {
+    lastStatus = null;
     renderStatus(null);
   }
 }
