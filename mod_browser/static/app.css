@@ -161,8 +161,6 @@ p { margin: 0; }
 }
 .wordmark { font: 700 1.0625rem/1 var(--font-display); text-decoration: none; margin-right: auto; padding-block: 0.6rem; }
 .wordmark:hover { color: var(--ink); }
-.wordmark { display: inline-flex; align-items: center; gap: 0.6rem; }
-.server-icon { width: 2rem; height: 2rem; border-radius: 0.5rem; flex: none; object-fit: cover; box-shadow: 0 0 0 1px var(--hairline); }
 .nav-links { display: flex; flex-wrap: wrap; gap: 0.15rem; list-style: none; margin: 0; padding: 0; }
 .nav-links a {
   display: inline-flex; align-items: center; min-height: 2.5rem; padding: 0 0.9rem;

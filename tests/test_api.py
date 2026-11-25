@@ -236,13 +236,13 @@ class ApiTest(unittest.TestCase):
         self.assertIn(b'<li><a href="/" aria-current="page">Status</a></li>', body)
         self.assertNotIn(b">Mods</a>", body)
 
-    def test_page_shows_the_server_icon_beside_its_name(self):
+    def test_front_page_shows_the_server_name_without_its_logo(self):
         body = self.get(self.public + "/")[2]
-        self.assertIn(b'<img class="server-icon" src="/static/server-icon.png"', body)
-        status, headers, icon = self.get(self.public + "/static/server-icon.png")
-        self.assertEqual(status, 200)
-        self.assertEqual(headers["Content-Type"], "image/png")
-        self.assertTrue(icon.startswith(b"\x89PNG"))
+        self.assertIn(b'<a class="wordmark" href="/">', body)
+        self.assertNotIn(b"server-icon", body)
+
+    def test_former_server_logo_url_is_unavailable(self):
+        self.assertEqual(self.get(self.public + "/static/server-icon.png")[0], 404)
 
     def test_static_files_cannot_escape_their_directory(self):
         for path in ("/static/../web.py", "/static/%2e%2e/web.py", "/static/"):
