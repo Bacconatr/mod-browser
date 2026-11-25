@@ -100,6 +100,15 @@ body:has(.band[data-state="starting"]) { --state: var(--color-peach); }
 body:has(.band[data-state="down"]) { --state: var(--color-red); }
 body:has(.band[data-state="unknown"]) { --state: var(--color-mauve); }
 body:has(.band[data-state="site"]) { --state: var(--color-peach); }
+/* Registered so it interpolates: a change of state fades the glow, the band's edge and the lamp
+   together. Not on the first reading, which lands at once (app.js sets data-live after it). */
+@property --state { syntax: "<color>"; inherits: true; initial-value: #6c7086; }
+body[data-live] { transition: --state 1.2s var(--ease); }
+
+/* Moving between pages cross-fades instead of blinking, where the browser supports it. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition { navigation: auto; }
+}
 
 ::selection { background: var(--accent); color: var(--accent-ink); }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; transition: none; }
@@ -319,6 +328,11 @@ input[type="date"] { width: auto; min-width: 11rem; color-scheme: dark; }
 .mod-table tbody tr:last-child td { border-bottom: 0; }
 .mod-table tbody tr { transition: background-color var(--dur-micro) var(--ease); }
 .mod-table tbody tr:hover { background: var(--glass-hover); }
+/* A request that arrived since the queue last refreshed. */
+@media (prefers-reduced-motion: no-preference) {
+  .mod-table tbody tr.arrived { animation: arrive 600ms var(--ease) both; }
+}
+@keyframes arrive { from { opacity: 0; transform: translateY(-0.4rem); } }
 .mod-name { font-weight: 600; }
 .mod-file { display: block; font: 0.75rem/1.45 var(--mono); color: var(--ink-2); overflow-wrap: anywhere; margin-top: 0.1rem; }
 .version { font-family: var(--mono); font-size: 0.8125rem; white-space: nowrap; color: var(--color-subtext1); }

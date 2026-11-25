@@ -71,6 +71,8 @@ function renderStatus(status, unreachable = "unknown") {
   const state = status ? status.state : unreachable;
   const band = document.querySelector(".band");
   band.dataset.state = state;
+  // Later changes of state fade (app.css, body[data-live]); this first one does not.
+  if (!("live" in document.body.dataset)) requestAnimationFrame(() => requestAnimationFrame(() => { document.body.dataset.live = ""; }));
   $("state-label").textContent = STATES[state].label;
   // A finished update ("online") is old news once the label says Online or Starting up: say nothing.
   const phase = status && status.apply ? status.apply.phase : "idle";

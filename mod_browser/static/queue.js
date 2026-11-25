@@ -16,6 +16,9 @@ const dayFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "num
 const day = (iso) => (iso && !Number.isNaN(Date.parse(iso)) ? dayFormat.format(new Date(iso)) : "");
 const LABEL = { pending: "Pending", approved: "Approved", queued: "Queued", denied: "Denied" };
 
+// Ids on screen after the last load; null before the first, so the first list does not animate.
+let seen = null;
+
 async function load() {
   try {
     const response = await fetch("/api/requests", { headers: { accept: "application/json" } });
@@ -28,8 +31,9 @@ async function load() {
       const mod = el("td", {}, [el("strong", { text: r.mod.name }), document.createTextNode(" "), el("span", { class: "muted", text: r.mod.versionNumber + (r.mod.channel === "release" ? "" : ` (${r.mod.channel})`) })]);
       if (r.dependencies.length) mod.append(el("div", { class: "meta" }, [el("span", { text: `with ${r.dependencies.join(", ")}` })]));
       if (r.reason) mod.append(el("div", { class: "meta" }, [el("span", { text: r.reason })]));
-      rows.append(el("tr", {}, [mod, el("td", { text: r.requester }), el("td", {}, [el("span", { class: `pill pill-${r.state}`, text: LABEL[r.state] || r.state })]), el("td", { text: day(r.createdAt) })]));
+      rows.append(el("tr", seen && !seen.has(r.id) ? { class: "arrived" } : {}, [mod, el("td", { text: r.requester }), el("td", {}, [el("span", { class: `pill pill-${r.state}`, text: LABEL[r.state] || r.state })]), el("td", { text: day(r.createdAt) })]));
     }
+    seen = new Set(requests.map((r) => r.id));
   } catch {
     $("result-line").textContent = "Could not load the queue. It will try again.";
   }
